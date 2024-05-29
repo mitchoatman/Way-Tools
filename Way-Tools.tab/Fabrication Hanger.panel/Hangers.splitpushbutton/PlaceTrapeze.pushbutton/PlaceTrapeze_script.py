@@ -368,15 +368,15 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
         if (delta_x) > (delta_y):
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
                     hanger.SetDimensionValue(dim, delta_y)
-                if dim.Name == "Bearer Extn":
+                if dim.Name == "Strut Extension":
                     bearer_value = hanger.GetDimensionValue(dim)
                     hanger.SetDimensionValue(dim, 0.33333)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
-                if dim.Name == "Bearer Extn":
+                if dim.Name == "Strut Extension":
                     bearer_value = hanger.GetDimensionValue(dim)
                     in_bvalue = (bearer_value * 12)
                     bvalue_abvstd = in_bvalue - 4.0
@@ -409,15 +409,15 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
 
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
                     hanger.SetDimensionValue(dim, delta_x)
-                if dim.Name == "Bearer Extn":
+                if dim.Name == "Strut Extension":
                     bearer_value = hanger.GetDimensionValue(dim)
                     hanger.SetDimensionValue(dim, 0.33333)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
-                if dim.Name == "Bearer Extn":
+                if dim.Name == "Strut Extension":
                     bearer_value = hanger.GetDimensionValue(dim)
                     in_bvalue = (bearer_value * 12)
                     bvalue_abvstd = in_bvalue - 4.0
