@@ -194,7 +194,7 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
     # if lines[0] in buttonnames:
     components = [
         Label('Choose Hanger:'),
-        ComboBox('Buttonnum', buttonnames, sort=False, default=lines[0]),
+        ComboBox('Buttonnum', buttonnames, sort=False),
         Label('Distance from End (Ft):'),
         TextBox('EndDist', lines[1]),
         Label('Hanger Spacing (Ft):'),
