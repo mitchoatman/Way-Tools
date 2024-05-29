@@ -191,34 +191,34 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
             buttonnames.append(bt.Name)	
 
     # Display dialog
-    # if lines[0] in buttonnames:
-    components = [
-        Label('Choose Hanger:'),
-        ComboBox('Buttonnum', buttonnames, sort=False),
-        Label('Distance from End (Ft):'),
-        TextBox('EndDist', lines[1]),
-        Label('Hanger Spacing (Ft):'),
-        TextBox('Spacing', lines[2]),
-        CheckBox('checkboxBOI', 'Align Trapeze to Bottom of Insulation', default= checkboxdefBOI),
-        CheckBox('checkboxvalue', 'Attach to Structure', default= checkboxdef),
-        Button('Ok')
-        ]
-    form = FlexForm('Hanger and Spacing', components)
-    form.show()
-    # else:
-        # components = [
-            # Label('Choose Hanger:'),
-            # ComboBox('Buttonnum', buttonnames, sort=False),
-            # Label('Distance from End (Ft):'),
-            # TextBox('EndDist', lines[1]),
-            # Label('Hanger Spacing (Ft):'),
-            # TextBox('Spacing', lines[2]),
-            # CheckBox('checkboxBOI', 'Align Trapeze to BOI', default= checkboxdefBOI),
-            # CheckBox('checkboxvalue', 'Attach to Structure', default= checkboxdef),
-            # Button('Ok')
-            # ]
-        # form = FlexForm('Hanger and Spacing', components)
-        # form.show()
+    if lines[0] in buttonnames:
+        components = [
+            Label('Choose Hanger:'),
+            ComboBox('Buttonnum', buttonnames, sort=False, default=lines[0]),
+            Label('Distance from End (Ft):'),
+            TextBox('EndDist', lines[1]),
+            Label('Hanger Spacing (Ft):'),
+            TextBox('Spacing', lines[2]),
+            CheckBox('checkboxBOI', 'Align Trapeze to Bottom of Insulation', default= checkboxdefBOI),
+            CheckBox('checkboxvalue', 'Attach to Structure', default= checkboxdef),
+            Button('Ok')
+            ]
+        form = FlexForm('Hanger and Spacing', components)
+        form.show()
+    else:
+        components = [
+            Label('Choose Hanger:'),
+            ComboBox('Buttonnum', buttonnames, sort=False),
+            Label('Distance from End (Ft):'),
+            TextBox('EndDist', lines[1]),
+            Label('Hanger Spacing (Ft):'),
+            TextBox('Spacing', lines[2]),
+            CheckBox('checkboxBOI', 'Align Trapeze to BOI', default= checkboxdefBOI),
+            CheckBox('checkboxvalue', 'Attach to Structure', default= checkboxdef),
+            Button('Ok')
+            ]
+        form = FlexForm('Hanger and Spacing', components)
+        form.show()
 
     # Convert dialog input into variable
     Selectedbutton = (form.values['Buttonnum'])
