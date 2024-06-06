@@ -1,4 +1,5 @@
 layout:
+  - BWG-Background
   - Families
   - Copy_VG_Filters
   - Exports
@@ -8,7 +9,6 @@ layout:
   - OverkillPipeAccessories
   - OverkillPlumbingFixtures
   - SaveViews
-  - BWG-Background
 
 
 background:
