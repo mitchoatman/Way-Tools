@@ -4,6 +4,8 @@ layout:
   - Copy_VG_Filters
   - Exports
   - CreateSheets
+  - DuplicateView
+  - Rename_Sheets
   - WorksetTools
   - OverkillFP
   - OverkillPipeAccessories
