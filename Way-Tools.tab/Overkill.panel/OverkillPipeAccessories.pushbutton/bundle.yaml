@@ -1,18 +1,18 @@
-#highlight: new
+highlight: new
 #highlight: updated
 
 # bundle title
 title:
-  "Overkill\nFab Parts"
+  "Overkill\nPipe Accessories"
 
 # bundle tooltip
 tooltip: |-
-  Searches for duplicate fabrication parts in ACTIVE VIEW that occupy the same physical space.
+  Searches for duplicate Pipe Accessories in ACTIVE VIEW that occupy the same physical space.
       1. Run Script.
       2. If duplicates are found confirm you wish to delete with Yes or No.
 
   [Shift]-Click:
-  Search for duplicate fabrication parts in the ENTIRE model.
+  Search for duplicate Pipe Accessories in the ENTIRE model.
 
 # context directives are listed under `context` key, the order does not matter
 #context:

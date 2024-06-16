@@ -10,10 +10,11 @@ def GetCenterPoint(ele):
     center = (bBox.Max + bBox.Min) / 2
     return (center.X, center.Y, center.Z)
 
-# Create a FilteredElementCollector to get all FabricationPart elements
-AllElements = FilteredElementCollector(doc).OfClass(FabricationPart) \
+# Create a FilteredElementCollector to get all PipeAccessory elements
+AllElements = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_PipeAccessory) \
                    .WhereElementIsNotElementType() \
                    .ToElements()
+
 # Get the center point of each selected element
 element_ids = []
 center_points = []
@@ -25,27 +26,27 @@ for reference in AllElements:
 
 # Find the duplicates in the list of center points
 duplicates = []
+duplicate_element_ids = []
 unique_center_points = []
-for center_point in center_points:
-    if center_point not in unique_center_points:
-        unique_center_points.append(center_point)
-    else:
-        duplicates.append(center_point)
 
-# Delete the elements that belong to duplicate center points
+for i, cp in enumerate(center_points):
+    if cp not in unique_center_points:
+        unique_center_points.append(cp)
+    else:
+        duplicates.append(cp)
+        duplicate_element_ids.append(element_ids[i])
+
 try:
     if duplicates:
-        forms.alert_ifnot(duplicates < 0,
+        forms.alert_ifnot(len(duplicates) < 0,
                           ("Delete Duplicate(s): {}".format(len(duplicates))),
                           yes=True, no=True, exitscript=True)
         
-        for duplicate in duplicates:
-            duplicate_index = center_points.index(duplicate)
-            element_id = element_ids[duplicate_index]
-            with Transaction(doc, "Delete Element") as transaction:
-                transaction.Start()
+        with Transaction(doc, "Delete Elements") as transaction:
+            transaction.Start()
+            for element_id in duplicate_element_ids:
                 doc.Delete(element_id)
-                transaction.Commit()
+            transaction.Commit()
     else:
         forms.toast(
             'No Duplicates Found',
@@ -55,5 +56,3 @@ try:
             click="https://murraycompany.com",)
 except:
     pass
-
-
