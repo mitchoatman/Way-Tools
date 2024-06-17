@@ -51,7 +51,7 @@ try:
         forms.toast(
             'No Duplicates Found',
             title="Duplicates",
-            appid="Murray Tools",
+            appid="Way Tools",
             icon="",
             click="https://murraycompany.com",)
 except:
