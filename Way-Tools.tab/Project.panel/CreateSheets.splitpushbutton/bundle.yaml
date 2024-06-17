@@ -1,6 +1,8 @@
 layout:
   - Create Sketch View
   - CreateSheetFromView
+  - DuplicateView
+  - Rename_Sheets_Views
 
 
 background:
