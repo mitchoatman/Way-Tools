@@ -1,6 +1,10 @@
 from Autodesk.Revit.UI.Selection import ObjectType
 from Autodesk.Revit.DB import BoundingBoxXYZ, FilteredElementCollector, Transaction, BuiltInCategory, FabricationPart
 from pyrevit import forms
+import os
+
+# extension_path = os.path.normpath(os.path.join(__file__, '../../../../../'))
+# icon_path = extension_path + '\Murray.ico'
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -49,12 +53,13 @@ try:
                 doc.Delete(element_id)
             transaction.Commit()
     else:
-        forms.toast(
-            'No Duplicates Found',
-            title="Duplicates",
-            appid="Way Tools",
-            icon="",
-            click="https://murraycompany.com",)
+        forms.show_balloon('Duplicates', 'No Duplicates Found')
+        # forms.toast(
+            # 'No Duplicates Found',
+            # title = "Duplicates",
+            # appid = "Murray Tools",
+            # icon = icon_path,
+            # click="https://murraycompany.com",)
 except:
     pass
 
