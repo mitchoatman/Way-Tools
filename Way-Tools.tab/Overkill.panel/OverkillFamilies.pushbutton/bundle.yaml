@@ -1,18 +1,19 @@
-#highlight: new
+highlight: new
 #highlight: updated
 
 # bundle title
 title:
-  "Overkill\nPipe Accessories"
+  "Overkill\nFamilies"
 
 # bundle tooltip
 tooltip: |-
-  Searches for duplicate Pipe Accessories in ACTIVE VIEW that occupy the same physical space.
-      1. Run Script.
-      2. If duplicates are found confirm you wish to delete with Yes or No.
+  Search for duplicate Families by category in ACTIVE VIEW that occupy the same physical space.
+      1. Run script.
+      2. Select categories you want to check for duplicates in.
+      3. If duplicates are found confirm you wish to delete with Yes or No.
 
   [Shift]-Click:
-  Search for duplicate Pipe Accessories in the ENTIRE model.
+  Search for duplicate Families by category in the ENTIRE model.
 
 # context directives are listed under `context` key, the order does not matter
 #context:
