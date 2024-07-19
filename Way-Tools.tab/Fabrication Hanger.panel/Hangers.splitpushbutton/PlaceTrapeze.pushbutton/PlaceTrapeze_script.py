@@ -34,7 +34,7 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
     if element and RevitINT > 2022:
         PRTElevation = get_parameter_value(element, 'Lower End Bottom Elevation')
 
-    if element and RevitINT < 2023:
+    if element and RevitINT < 2022:
         PRTElevation = get_parameter_value(element, 'Bottom')
 
     # Gets servicename of selection
