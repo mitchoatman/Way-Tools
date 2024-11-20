@@ -3,7 +3,9 @@ layout:
   - IsolateService
   - ResetView
   - SelectFabFilter
-
+  - Length
+  - Selection
+  - Leveler
 
 background:
   title: 'D5D5CD'
