@@ -1,4 +1,4 @@
-#highlight: new
+highlight: new
 
 # bundle title
 title:
@@ -19,3 +19,9 @@ tooltip: |-
 # context directives are listed under `context` key, the order does not matter
 #context:
 #  - Selection
+
+# bundle help url
+help_url: "https://youtu.be/z014sgDpJRk"
+
+# bundle author
+author: Mitchell Oatman

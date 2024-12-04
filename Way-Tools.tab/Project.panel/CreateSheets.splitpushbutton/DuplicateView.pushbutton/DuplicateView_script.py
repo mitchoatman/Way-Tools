@@ -1,6 +1,6 @@
 import Autodesk
 from Autodesk.Revit.DB import Transaction, ViewDuplicateOption
-from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, TextBox, Button)
+from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, Button)
 from pyrevit import forms
 import sys
 
@@ -30,35 +30,42 @@ form = FlexForm('Duplicate Views', components)
 form.show()
 
 try:
-    #---Convert dialog input into variable
+    #---Convert dialog input into variables
     DuplicateMode = (form.values['DupType'])
     NumberOfCopies = int(form.values['NumofCopies'])
 
+    # Start transaction to perform the duplication in bulk
     t = Transaction(doc, 'Duplicate View(s)')
     t.Start()
 
-    if DuplicateMode == 'Duplicate':
-        for view in selected_views:
-            if view.ViewType == 'Legend':
-                for i in range(NumberOfCopies):
-                    view.Duplicate(ViewDuplicateOption.WithDetailing)
-            else:
-                for i in range(NumberOfCopies):
-                    view.Duplicate(ViewDuplicateOption.Duplicate)
+    # Dictionary to store views and duplication methods
+    duplication_tasks = {}
 
-    if DuplicateMode == 'Duplicate with Detailing':
-        for view in selected_views:
-            if type(view) == 'Schedule':
-                for i in range(NumberOfCopies):
-                    view.Duplicate(ViewDuplicateOption.Duplicate)
-            else:
-                for i in range(NumberOfCopies):
-                    view.Duplicate(ViewDuplicateOption.WithDetailing)
+    for view in selected_views:
+        for i in range(NumberOfCopies):
+            if DuplicateMode == 'Duplicate':
+                if view.ViewType == 'Legend':
+                    duplication_tasks[view] = ViewDuplicateOption.WithDetailing
+                else:
+                    duplication_tasks[view] = ViewDuplicateOption.Duplicate
 
-    if DuplicateMode == 'Duplicate as a Dependent':
-        for view in selected_views:
-            for i in range(NumberOfCopies):
-                view.Duplicate(ViewDuplicateOption.AsDependent)
+            elif DuplicateMode == 'Duplicate with Detailing':
+                if type(view) == 'Schedule':
+                    duplication_tasks[view] = ViewDuplicateOption.Duplicate
+                else:
+                    duplication_tasks[view] = ViewDuplicateOption.WithDetailing
+
+            elif DuplicateMode == 'Duplicate as a Dependent':
+                duplication_tasks[view] = ViewDuplicateOption.AsDependent
+
+    # Process all duplications in the same transaction
+    for view, option in duplication_tasks.items():
+        for _ in range(NumberOfCopies):
+            view.Duplicate(option)
+
     t.Commit()
-except:
-        sys.exit()
+except Exception as e:
+    forms.alert("An error occurred: {}".format(e), exitscript=True)
+    t.RollBack()
+    sys.exit()
+

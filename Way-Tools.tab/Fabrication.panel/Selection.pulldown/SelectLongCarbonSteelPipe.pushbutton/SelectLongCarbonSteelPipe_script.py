@@ -1,7 +1,7 @@
 import Autodesk
 from Autodesk.Revit import DB
 from Autodesk.Revit.DB import Transaction, FilteredElementCollector, BuiltInCategory, BuiltInParameter
-from pyrevit import revit, DB, UI
+from pyrevit import revit, DB, script, forms, UI
 
 
 #define the active Revit application and document
@@ -21,6 +21,7 @@ pipe_collector = FilteredElementCollector(doc, curview.Id).OfCategory(BuiltInCat
                    .WhereElementIsNotElementType() \
                    .ToElements()
 
+found = False
 
 elementlist = []
 t = Transaction(doc, 'Select Pipes')
@@ -32,8 +33,12 @@ for pipe in pipe_collector:
         pipelen = pipe.Parameter[BuiltInParameter.FABRICATION_PART_LENGTH].AsDouble()
         pipemat = pipe.Parameter[BuiltInParameter.FABRICATION_PART_MATERIAL].AsValueString()  #Copper: Hard Copper  #Cast Iron: Cast Iron  #Carbon Steel: Carbon Steel
         if pipelen > 20.0 and pipemat == 'Carbon Steel: Carbon Steel':
-            elementlist.append(pipe.Id)
-selection.set_to(elementlist)
+            output = script.get_output()
+            print('{}: {}'.format('Pick on ID to select or Magnifying Glass to zoom to', output.linkify(pipe.Id)))
+            found = True
+
+if not found:
+    print 'Nothing Found'
 #End Transaction
 t.Commit()
 

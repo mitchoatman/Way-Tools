@@ -1,32 +1,17 @@
-# import Autodesk
-# from Autodesk.Revit.DB import *
-# from Autodesk.Revit.UI import *
-# from System.Collections.Generic import ISet
-
-# doc = __revit__.ActiveUIDocument.Document
-# uidoc = __revit__.ActiveUIDocument
-
-# #this is start of select element(s)
-# sel = uidoc.Selection.PickObjects(Selection.ObjectType.Element, 'Select Elements')
-# selected_elements = [doc.GetElement( elId ) for elId in sel]
-# #this is end of select element(s)
-
-# # Create an ISet[ElementId] of the selected elements
-# element_set = ISet[ElementId](list[ElementId](selected_elements))
-
-# print element_set
-
-# FabricationPart.SaveAsFabricationJob(doc, element_set, "C:/output.maj", True)
 
 import Autodesk
 import clr
 import System
-from Autodesk.Revit.DB import *
+from Autodesk.Revit.DB import ElementId
 from Autodesk.Revit.DB.Fabrication import FabricationSaveJobOptions
 from Autodesk.Revit.DB.FabricationPart import SaveAsFabricationJob
 from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 clr.AddReference("System.Core")
 from System.Collections.Generic import HashSet
+
+clr.AddReference("System.Windows.Forms")
+clr.AddReference("System.Drawing")
+from System.Windows.Forms import SaveFileDialog, DialogResult
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -42,4 +27,13 @@ for id in element_ids:
 
 options = FabricationSaveJobOptions()
 
-SaveAsFabricationJob(doc, id_set, "C:\\Temp\\Output.maj", options)
+# Prompt user for file name and location
+save_dialog = SaveFileDialog()
+save_dialog.Filter = "Fabrication Job Files (*.maj)|*.maj"
+result = save_dialog.ShowDialog()
+
+if result == DialogResult.OK:
+    file_path = save_dialog.FileName
+    SaveAsFabricationJob(doc, id_set, file_path, options)
+else:
+    print("Fabrication job saving canceled.")

@@ -1,4 +1,4 @@
-#highlight: new
+highlight: new
 #highlight: updated
 
 # bundle title
@@ -7,8 +7,8 @@ title:
 
 # bundle tooltip
 tooltip: |-
-  Searches for duplicate fabrication parts in ACTIVE VIEW that occupy the same physical space.
-      1. Run Script.
+  Search for duplicate fabrication parts in ACTIVE VIEW that occupy the same physical space.
+      1. Run script.
       2. If duplicates are found confirm you wish to delete with Yes or No.
 
   [Shift]-Click:

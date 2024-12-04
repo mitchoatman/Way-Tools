@@ -31,7 +31,7 @@ if basefolder:
 
         if csv_sp:
             vseop.FieldDelimiter = csv_sp
-            vseop.Title = True
+            vseop.Title = False
             vseop.HeadersFootersBlanks = True
 
             for sched in schedules_to_export:

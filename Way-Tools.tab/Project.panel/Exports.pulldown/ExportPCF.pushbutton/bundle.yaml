@@ -1,5 +1,5 @@
-highlight: new
-#highlight: updated
+# highlight: updated
+#highlight: new
 
 # bundle title
 title:
@@ -8,13 +8,10 @@ title:
 # bundle tooltip
 tooltip: |-
   Exports an PCF file of selected elements.
-      1. Run commandSelect a view in project browser.
+      1. Run command.
       2. Select Elements.
-  File will be exported to C:\Temp folder named My_PCF_File.pcf
-  -------------------------
-  Planned Improvements:
-    1. Allow user to specify file saved name and location.
-  -------------------------
+      3. Choose save location and file name.
+
 # context directives are listed under `context` key, the order does not matter
 #context:
 #  - Walls
