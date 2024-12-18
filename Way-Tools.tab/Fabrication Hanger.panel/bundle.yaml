@@ -1,6 +1,7 @@
 layout:
   - Hangers
   - CropCircle
+  - RackAlign
 
 background:
 #  title: 'D5D5CD'
