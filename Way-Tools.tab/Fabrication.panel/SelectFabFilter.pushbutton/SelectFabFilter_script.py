@@ -23,16 +23,9 @@ CIDlist = []
 Namelist = []
 SNamelist = []
 SNameABBRlist = []
-STRATUSAssemlist = []
 Sizelist = []
-ValveNumlist = []
-LineNumlist = []
-STRATUSStatuslist = []
 RefLevelList = []
 ItemNumList = []
-BundleList = []
-REFLineNumList = []
-REFBSDesigList = []
 elementlist = []
 CommentsList = []
 SpecificationList = []
@@ -92,15 +85,8 @@ if preselection:
     Name_set = set(Namelist)
     SNamelist_set = set(SNamelist)
     SNameABBRlist_set = set(SNameABBRlist)
-    STRATUSAssemlist_set = set(STRATUSAssemlist)
-    LineNumlist_set = set(LineNumlist)
-    STRATUSStatuslist_set = set(STRATUSStatuslist)
     RefLevelList_set = set(RefLevelList)
     ItemNumList_set = set(ItemNumList)
-    BundleList_set = set(BundleList)
-    REFBSDesigList_set = set(REFBSDesigList)
-    REFLineNumList_set = set(REFLineNumList)
-    ValveNumlist_set = set(ValveNumlist)
     CommentsList_set = set(CommentsList)
     SpecificationList_set = set(SpecificationList)
  
@@ -112,17 +98,10 @@ if preselection:
             'Service Name': sorted(SNamelist_set),
             'Service Abbreviation': sorted(SNameABBRlist_set),
             'Size': sorted(set(Sizelist)),
-            'STRATUS Assembly': sorted(STRATUSAssemlist_set),
-            'Line Number': sorted(LineNumlist),
-            'STRATUS Status': sorted(STRATUSStatuslist_set),
             'Reference Level': sorted(RefLevelList_set),
             'Item Number': sorted(ItemNumList_set),
-            'Bundle Number': sorted(BundleList_set),
-            'REF BS Designation': sorted(REFBSDesigList_set),
-            'REF Line Number': sorted(REFLineNumList_set),
             'Comments': sorted(CommentsList_set),
-            'Specification': sorted(SpecificationList_set),
-            'Valve Number': sorted(ValveNumlist_set)}
+            'Specification': sorted(SpecificationList_set)}
 
         res = forms.SelectFromList.show(GroupOptions,group_selector_title='Property Type:', multiselect=True, button_name='Select Item(s)', exitscript = True)
 
@@ -144,32 +123,11 @@ if preselection:
                 if fil in SNameABBRlist_set:
                     if get_parameter_value_by_name_AsString(elem, 'Fabrication Service Abbreviation') == fil:
                         elementlist.append(elem.Id)
-                if fil in STRATUSAssemlist_set:
-                    if get_parameter_value_by_name_AsString(elem, 'STRATUS Assembly') == fil:
-                        elementlist.append(elem.Id)
-                if fil in STRATUSStatuslist_set:
-                    if get_parameter_value_by_name_AsString(elem, 'STRATUS Status') == fil:
-                        elementlist.append(elem.Id)
-                if fil in LineNumlist_set:
-                    if get_parameter_value_by_name_AsString(elem, 'FP_Line Number') == fil:
-                        elementlist.append(elem.Id)
                 if fil in RefLevelList_set:
                     if get_parameter_value_by_name_AsValueString(elem, 'Reference Level') == fil:
                         elementlist.append(elem.Id)
                 if fil in ItemNumList_set:
                     if get_parameter_value_by_name_AsString(elem, 'Item Number') == fil:
-                        elementlist.append(elem.Id)
-                if fil in BundleList_set:
-                    if get_parameter_value_by_name_AsString(elem, 'FP_Bundle') == fil:
-                        elementlist.append(elem.Id)
-                if fil in REFBSDesigList_set:
-                    if get_parameter_value_by_name_AsString(elem, 'FP_REF BS Designation') == fil:
-                        elementlist.append(elem.Id)
-                if fil in REFLineNumList_set:
-                    if get_parameter_value_by_name_AsString(elem, 'FP_REF Line Number') == fil:
-                        elementlist.append(elem.Id)
-                if fil in ValveNumlist_set:
-                    if get_parameter_value_by_name_AsString(elem, 'FP_Valve Number') == fil:
                         elementlist.append(elem.Id)
                 if get_parameter_value_by_name_AsString(elem, 'Size of Primary End') == fil:
                     elementlist.append(elem.Id)
@@ -202,16 +160,9 @@ else:
             Namelist = list(map(lambda x: get_parameter_value_by_name_AsValueString(x, 'Family'), part_collector))
             SNamelist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Fabrication Service Name'), part_collector))
             SNameABBRlist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Fabrication Service Abbreviation'), part_collector))
-            STRATUSAssemlist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'STRATUS Assembly'), part_collector))
-            STRATUSStatuslist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'STRATUS Status'), part_collector))
-            ValveNumlist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_Valve Number'), part_collector))
             servicetypenamelist = list(map(lambda x: Config.GetServiceTypeName(x.ServiceType), part_collector))
-            LineNumlist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_Line Number'), part_collector))
             RefLevelList = list(map(lambda x: get_parameter_value_by_name_AsValueString(x, 'Reference Level'), part_collector))
             ItemNumList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Item Number'), part_collector))
-            BundleList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_Bundle'), part_collector))
-            REFLineNumList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_REF Line Number'), part_collector))
-            REFBSDesigList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_REF BS Designation'), part_collector))
             Sizelist = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Size'), pipeduct_collector))
             CommentsList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Comments'), part_collector))
             SpecificationList = list(map(lambda x: Config.GetSpecificationName(x.Specification), part_collector))
@@ -231,15 +182,8 @@ else:
         Name_set = set(Namelist)
         SNamelist_set = set(SNamelist)
         SNameABBRlist_set = set(SNameABBRlist)
-        STRATUSAssemlist_set = set(STRATUSAssemlist)
-        LineNumlist_set = set(LineNumlist)
-        STRATUSStatuslist_set = set(STRATUSStatuslist)
         RefLevelList_set = set(RefLevelList)
         ItemNumList_set = set(ItemNumList)
-        BundleList_set = set(BundleList)
-        REFBSDesigList_set = set(REFBSDesigList)
-        REFLineNumList_set = set(REFLineNumList)
-        ValveNumlist_set = set(ValveNumlist)
         Sizelist_set = set(Sizelist)
         SpecificationList_set = set(SpecificationList)
         CommentsList_set = set(CommentsList)
@@ -251,17 +195,10 @@ else:
                 'Service Name': sorted(SNamelist_set),
                 'Service Abbreviation': sorted(SNameABBRlist_set),
                 'Size': sorted(Sizelist_set),
-                'STRATUS Assembly': sorted(STRATUSAssemlist_set),
-                'Line Number': sorted(LineNumlist_set),
-                'STRATUS Status': sorted(STRATUSStatuslist_set),
                 'Reference Level': sorted(RefLevelList_set),
                 'Item Number': sorted(ItemNumList_set),
-                'Bundle Number': sorted(BundleList_set),
-                'REF BS Designation': sorted(REFBSDesigList_set),
-                'REF Line Number': sorted(REFLineNumList_set),
                 'Comments': sorted(CommentsList_set),
-                'Specification': sorted(SpecificationList_set),
-                'Valve Number': sorted(ValveNumlist_set)}
+                'Specification': sorted(SpecificationList_set)}
 
 
             res = forms.SelectFromList.show(GroupOptions,group_selector_title='Property Type:', multiselect=True, button_name='Select Item(s)', exitscript = True)
@@ -283,32 +220,11 @@ else:
                     if fil in SNameABBRlist_set:
                         if get_parameter_value_by_name_AsString(elem, 'Fabrication Service Abbreviation') == fil:
                             elementlist.append(elem.Id)
-                    if fil in STRATUSAssemlist_set:
-                        if get_parameter_value_by_name_AsString(elem, 'STRATUS Assembly') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in STRATUSStatuslist_set:
-                        if get_parameter_value_by_name_AsString(elem, 'STRATUS Status') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in LineNumlist_set:
-                        if get_parameter_value_by_name_AsString(elem, 'FP_Line Number') == fil:
-                            elementlist.append(elem.Id)
                     if fil in RefLevelList_set:
                         if get_parameter_value_by_name_AsValueString(elem, 'Reference Level') == fil:
                             elementlist.append(elem.Id)
                     if fil in ItemNumList_set:
                         if get_parameter_value_by_name_AsString(elem, 'Item Number') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in BundleList_set:
-                        if get_parameter_value_by_name_AsString(elem, 'FP_Bundle') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in REFBSDesigList_set:
-                        if get_parameter_value_by_name_AsString(elem, 'FP_REF BS Designation') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in REFLineNumList_set:
-                        if get_parameter_value_by_name_AsString(elem, 'FP_REF Line Number') == fil:
-                            elementlist.append(elem.Id)
-                    if fil in ValveNumlist_set:
-                        if get_parameter_value_by_name_AsString(elem, 'FP_Valve Number') == fil:
                             elementlist.append(elem.Id)
                     if fil in CommentsList_set:
                         if get_parameter_value_by_name_AsString(elem, 'Comments') == fil:
