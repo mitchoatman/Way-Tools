@@ -162,8 +162,8 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
                 except:
                     groupnamelist.append(FabricationService[Servicenum].GetGroupName(Item3))
 
-    if 'SUPPORTS' in groupnamelist:
-        SelectedServicegroupname = 'SUPPORTS'
+    if 'Supports' in groupnamelist:
+        SelectedServicegroupname = 'Supports'
         Servicegroupnum = groupnamelist.index(SelectedServicegroupname)
     else:
         # Display dialog
