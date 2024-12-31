@@ -385,7 +385,7 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
 
     #-----------------------------------------------------------------------------------TRAPS IN X DIRECTION, MOVES AND MODIFIES PLACED TRAPS ABOVE
         if (delta_x) > (delta_y):
-            newwidth = (myround((delta_y * 12), 2) / 12)
+            newwidth = (myround((delta_y * 12 + 1.0), 2) / 12)
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
                 if dim.Name == "Duct Width":
@@ -415,7 +415,7 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
             ElementTransformUtils.RotateElement(doc, hanger.Id, curve, (90.0 * (math.pi / 180.0)))
             #---------------ROTATION OF TRAP---------------#
             
-            newwidth = (myround((delta_x * 12), 2) / 12)
+            newwidth = (myround((delta_x * 12 + 1.0), 2) / 12)
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
                 if dim.Name == "Duct Width":
