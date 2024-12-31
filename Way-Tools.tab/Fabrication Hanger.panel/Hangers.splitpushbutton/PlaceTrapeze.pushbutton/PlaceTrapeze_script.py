@@ -385,26 +385,12 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
 
     #-----------------------------------------------------------------------------------TRAPS IN X DIRECTION, MOVES AND MODIFIES PLACED TRAPS ABOVE
         if (delta_x) > (delta_y):
+            newwidth = (myround((delta_y * 12), 2) / 12)
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
-                    hanger.SetDimensionValue(dim, delta_y)
-                if dim.Name == "Bearer Extn":
-                    bearer_value = hanger.GetDimensionValue(dim)
-                    hanger.SetDimensionValue(dim, 0.33333)
-                if dim.Name == "Width":
-                    width_value = hanger.GetDimensionValue(dim)
-                if dim.Name == "Bearer Extn":
-                    bearer_value = hanger.GetDimensionValue(dim)
-                    in_bvalue = (bearer_value * 12)
-                    bvalue_abvstd = in_bvalue - 4.0
-                    in_wvalue = (width_value * 12)
-                    rnd_value = myround((in_bvalue + in_wvalue + bvalue_abvstd), 2)
-                    abv_value = rnd_value - in_wvalue
-                    hlf_diff = (abv_value - 4.0) / 2
-                    new_value = (abv_value - hlf_diff) / 12
-                    hanger.SetDimensionValue(dim, new_value)
+                    hanger.SetDimensionValue(dim, newwidth)
                 translation = X_side_xyz - GetCenterPoint(hanger.Id)
                 ElementTransformUtils.MoveElement(doc, hanger.Id, translation)
                 reference_level = get_reference_level(hanger)
@@ -428,27 +414,13 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
             curve = Autodesk.Revit.DB.Line.CreateBound(curve_points[0], curve_points[1])
             ElementTransformUtils.RotateElement(doc, hanger.Id, curve, (90.0 * (math.pi / 180.0)))
             #---------------ROTATION OF TRAP---------------#
-
+            
+            newwidth = (myround((delta_x * 12), 2) / 12)
             for dim in hanger.GetDimensions():
                 Dimensions.append(dim.Name)
-                if dim.Name == "Width":
+                if dim.Name == "Duct Width":
                     width_value = hanger.GetDimensionValue(dim)
-                    hanger.SetDimensionValue(dim, delta_x)
-                if dim.Name == "Bearer Extn":
-                    bearer_value = hanger.GetDimensionValue(dim)
-                    hanger.SetDimensionValue(dim, 0.33333)
-                if dim.Name == "Width":
-                    width_value = hanger.GetDimensionValue(dim)
-                if dim.Name == "Bearer Extn":
-                    bearer_value = hanger.GetDimensionValue(dim)
-                    in_bvalue = (bearer_value * 12)
-                    bvalue_abvstd = in_bvalue - 4.0
-                    in_wvalue = (width_value * 12)
-                    rnd_value = myround((in_bvalue + in_wvalue + bvalue_abvstd), 2)
-                    abv_value = rnd_value - in_wvalue
-                    hlf_diff = (abv_value - 4.0) / 2
-                    new_value = (abv_value - hlf_diff) / 12
-                    hanger.SetDimensionValue(dim, new_value)
+                    hanger.SetDimensionValue(dim, newwidth)
                 translation = Y_side_xyz - GetCenterPoint(hanger.Id)
                 ElementTransformUtils.MoveElement(doc, hanger.Id, translation)
                 reference_level = get_reference_level(hanger)
@@ -463,4 +435,3 @@ if doc.GetElement(selected_element.ElementId).ItemCustomId != 916:
     t.Commit()
 else:
     print 'Coming Soon... \nYou will be able to place a trapeze on a ptrap'
-
