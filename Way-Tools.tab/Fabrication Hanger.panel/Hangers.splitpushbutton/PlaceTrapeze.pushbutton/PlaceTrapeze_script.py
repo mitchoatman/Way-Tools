@@ -1,4 +1,3 @@
-
 #------------------------------------------------------------------------------------IMPORTS
 import Autodesk
 from Autodesk.Revit.DB import Transaction, FabricationConfiguration, BuiltInParameter, FabricationPart, FabricationServiceButton, \
