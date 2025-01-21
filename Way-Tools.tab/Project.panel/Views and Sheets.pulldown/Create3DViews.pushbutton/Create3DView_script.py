@@ -1,10 +1,22 @@
 import clr
 clr.AddReference('RevitAPI')
 from Autodesk.Revit.DB import FilteredElementCollector, Level, ViewFamilyType, ViewFamily, View3D, BoundingBoxXYZ, XYZ, Transaction
-#from Autodesk.Revit.UI import TaskDialog
-
 
 doc = __revit__.ActiveUIDocument.Document
+uidoc = __revit__.ActiveUIDocument
+curview = doc.ActiveView
+
+# Get the bounding box of the active view
+active_view_bbox = curview.CropBox
+
+# Extract X and Y values from the active view's bounding box
+active_view_min = active_view_bbox.Min
+active_view_max = active_view_bbox.Max
+
+x_min = active_view_min.X
+x_max = active_view_max.X
+y_min = active_view_min.Y
+y_max = active_view_max.Y
 
 def create_3d_view_per_level():
     levels = FilteredElementCollector(doc).OfClass(Level).ToElements()
@@ -41,7 +53,7 @@ def create_3d_view_per_level():
 
             # Set the section box for the view
             bbox = BoundingBoxXYZ()
-            bbox.Min = XYZ(-100, -100, level.Elevation)  # Level's exact elevation for Min Z
+            bbox.Min = XYZ(x_min, y_min, level.Elevation)  # Use dynamic X, Y, and the level's elevation for Z Min
             
             # Determine the max elevation
             if i < len(levels) - 1:  # If there's a level above
@@ -49,7 +61,7 @@ def create_3d_view_per_level():
             else:  # If no level above, add a default height (e.g., 10 units)
                 max_elevation = level.Elevation + 10
 
-            bbox.Max = XYZ(100, 100, max_elevation)
+            bbox.Max = XYZ(x_max, y_max, max_elevation)  # Use dynamic X, Y, and computed Z Max
             view.SetSectionBox(bbox)
 
             created_views.append(view_name)  # Add to created list
@@ -60,7 +72,6 @@ def create_3d_view_per_level():
     created_message = "\n".join("- %s" % view for view in created_views) if created_views else "None"
     skipped_message = "\n".join("- %s" % view for view in skipped_views) if skipped_views else "None"
 
-
     # Create a dialog box to show the results
     dialog_message = (
         "Views Created:\n{0}\n\n"
@@ -68,7 +79,6 @@ def create_3d_view_per_level():
     )
 
     # Show the dialog
-    #TaskDialog.Show("View Creation Status", dialog_message)
-    print dialog_message
+    print(dialog_message)
 
 create_3d_view_per_level()

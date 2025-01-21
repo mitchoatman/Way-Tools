@@ -8,8 +8,9 @@ title:
 # bundle tooltip
 tooltip: >-
   Creates a 3D View for every level in the project.
+      1. Create a crop region in active view to set X-Y extents of 3D view.
       1. Run command.
-      2. Views will be created
+      2. Views will be created for each level element in project.
 
 # context directives are listed under `context` key, the order does not matter
 #context:
