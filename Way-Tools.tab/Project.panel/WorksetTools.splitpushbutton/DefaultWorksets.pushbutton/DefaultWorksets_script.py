@@ -12,7 +12,7 @@ for c in AllWorksets:
 	WorksetNames.append(c.Name)
 
 WorksetToAdd = []
-WorksetToAdd.append('MURRAY Levels and Grids')
+WorksetToAdd.append('WAY Levels and Grids')
 WorksetToAdd.append('LINK - ARCH')
 WorksetToAdd.append('LINK - STRUCT')
 WorksetToAdd.append('LINK - MEP')
