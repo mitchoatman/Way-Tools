@@ -1,0 +1,28 @@
+highlight: updated
+
+# bundle title
+title:
+  "Extend\nBraces"
+
+# bundle tooltip
+tooltip: >-
+  Extends seismic braces top of hanger rod elevation.
+      1. Run Command.
+      2. Select braces you want to extend.
+      3. Select fabrication hanger with desired rod height
+
+    [Shift]-Click to extend braces to user defined elevation.
+          1. Run Command.
+          2. Select braces you want to extend.
+          3. Enter elevation into dialog.
+
+# context directives are listed under `context` key, the order does not matter
+#context:
+#  - Walls
+#  - Text Notes
+
+# bundle help url
+#help_url: "https://www.youtube.com/watch?v=H7b8hjHbauE&t=8s&list=PLc_1PNcpnV57FWI6G8Cd09umHpSOzvamf"
+
+# bundle author
+author: Mitchell Oatman
