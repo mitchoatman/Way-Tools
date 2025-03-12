@@ -3,10 +3,14 @@ from Autodesk.Revit.DB import FilteredElementCollector, Transaction, BuiltInCate
 from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 from Parameters.Get_Set_Params import get_parameter_value_by_name_AsValueString
 import math
+import os
 
 app = __revit__.Application
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
+
+path, filename = os.path.split(__file__)
+NewFilename = r'\RIGID SEISMIC BRACE.rfa'
 
 # Search project for all Families
 families = FilteredElementCollector(doc).OfClass(Family)
@@ -75,7 +79,7 @@ class CustomISelectionFilter(ISelectionFilter):
 pipesel = uidoc.Selection.PickObjects(ObjectType.Element, CustomISelectionFilter("MEP Fabrication Hangers"), "Select Fabrication Hangers to place seismic brace on")            
 Fhangers = [doc.GetElement(elId) for elId in pipesel]
 
-family_pathCC = r'C:\Egnyte\Shared\BIM\Murray CADetailing Dept\REVIT\Families\Structural Stiffeners (Seismic)\RIGID SEISMIC BRACE.rfa'
+family_pathCC = path + NewFilename
 
 tg = TransactionGroup(doc, "Place Rigid Brace Family")
 tg.Start()
