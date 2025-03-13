@@ -112,7 +112,10 @@ if target_famtype:
         if STName == 1:
             ItmDims = hanger.GetDimensions()
             for dta in ItmDims:
-                if dta.Name == 'Rod Extn Above':
+                if dta.Name == 'Rod Length':
+                    RodLength = hanger.GetDimensionValue(dta)
+                    BraceOffsetZ = RodLength
+                elif dta.Name == 'RodLength':  # Check for 'RodLength' if 'Rod Length' isn't found
                     RodLength = hanger.GetDimensionValue(dta)
                     BraceOffsetZ = RodLength
                 # if dta.Name == 'Total Height':
