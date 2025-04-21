@@ -2,6 +2,7 @@ layout:
   - Export Schedules To CSV
   - ExportPCF
   - ExportMAJ
+  - ExportNWC
 
 
 background:
