@@ -12,6 +12,13 @@ NewFilename = r'\LRD.rfa'
 
 # Get the current view's associated level
 curview = doc.ActiveView
+
+if curview.ViewType != DB.ViewType.FloorPlan:
+    from Autodesk.Revit.UI import TaskDialog
+    import sys
+    TaskDialog.Show("Error", "This script can only be run in a Floor Plan view. Please switch to a Floor Plan view and try again.")
+    sys.exit()
+
 level = curview.GenLevel
 
 # Family setup
