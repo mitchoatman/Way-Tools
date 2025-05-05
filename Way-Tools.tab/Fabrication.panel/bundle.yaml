@@ -1,6 +1,5 @@
 layout:
   - HideIsolate
-  - ResetView
   - SelectFabFilter
   - Length
   - Selection
