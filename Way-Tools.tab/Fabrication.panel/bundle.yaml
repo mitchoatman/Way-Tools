@@ -1,6 +1,5 @@
 layout:
-  - HideService
-  - IsolateService
+  - HideIsolate
   - ResetView
   - SelectFabFilter
   - Length
