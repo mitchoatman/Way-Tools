@@ -118,6 +118,9 @@ if target_famtype:
                 elif dta.Name == 'RodLength':  # Check for 'RodLength' if 'Rod Length' isn't found
                     RodLength = hanger.GetDimensionValue(dta)
                     BraceOffsetZ = RodLength
+                elif dta.Name == 'Rod Extn Above':
+                    RodLength = hanger.GetDimensionValue(dta)
+                    BraceOffsetZ = RodLength
                 # if dta.Name == 'Total Height':
                     # HangerHeight = hanger.GetDimensionValue(dta)
                     # BraceOffsetZ = HangerHeight + 0.01041666
