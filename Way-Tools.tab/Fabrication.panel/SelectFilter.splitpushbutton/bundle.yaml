@@ -1,9 +1,7 @@
 layout:
-  - HideIsolate
-  - SelectFilter
-  - Length
-  - Selection
-  - Leveler
+  - SelectFabFilter
+  - Pick
+
 
 background:
 #  title: 'D5D5CD'
