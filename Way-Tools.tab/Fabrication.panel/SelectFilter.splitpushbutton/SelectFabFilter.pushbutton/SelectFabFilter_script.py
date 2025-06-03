@@ -38,13 +38,16 @@ CommentsList = []
 SpecificationList = []
 HangerRodSizeList = []
 BeamHangerList = []
+TrimbleBatchList = []
+HangerBatchList = []
+PipeBatchList = []
+DuctBatchList = []
 
 selection = revit.get_selection()
 
 preselection = [doc.GetElement(id) for id in __revit__.ActiveUIDocument.Selection.GetElementIds()]
 
 if preselection:
-
     try:
         for x in preselection:
             isfabpart = x.LookupParameter("Fabrication Service")
@@ -65,9 +68,13 @@ if preselection:
                 REFBSDesigList.append(get_parameter_value_by_name_AsString(x, 'FP_REF BS Designation'))
                 SizeList.append(get_parameter_value_by_name_AsString(x, 'Size of Primary End'))
                 CommentsList.append(get_parameter_value_by_name_AsString(x, 'Comments'))
-                SpecificationList.append (Config.GetSpecificationName(x.Specification))
-                HangerRodSizeList.append (get_parameter_value_by_name_AsValueString(x, 'FP_Rod Size'))
-                BeamHangerList.append (get_parameter_value_by_name_AsString(x, 'FP_Beam Hanger'))
+                SpecificationList.append(Config.GetSpecificationName(x.Specification))
+                HangerRodSizeList.append(get_parameter_value_by_name_AsValueString(x, 'FP_Rod Size'))
+                BeamHangerList.append(get_parameter_value_by_name_AsString(x, 'FP_Beam Hanger'))
+                TrimbleBatchList.append(get_parameter_value_by_name_AsString(x, 'Trimble Batch'))
+                HangerBatchList.append(get_parameter_value_by_name_AsString(x, 'Hanger Batch'))
+                PipeBatchList.append(get_parameter_value_by_name_AsString(x, 'Pipe Batch'))
+                DuctBatchList.append(get_parameter_value_by_name_AsString(x, 'Duct Batch'))
 
     except:
         pass
@@ -90,7 +97,11 @@ if preselection:
     CommentsList_set = set(CommentsList)
     SpecificationList_set = set(SpecificationList)
     HangerRodSizeList_set = set(HangerRodSizeList)    
-    BeamHangerList_set = set(BeamHangerList) 
+    BeamHangerList_set = set(BeamHangerList)
+    TrimbleBatchList_set = set(TrimbleBatchList)
+    HangerBatchList_set = set(HangerBatchList)
+    PipeBatchList_set = set(PipeBatchList)
+    DuctBatchList_set = set(DuctBatchList)
 
     GroupOptions = {'CID': sorted(CID_set),
         'ServiceType': sorted(service_type_set),
@@ -110,7 +121,11 @@ if preselection:
         'Specification': sorted(SpecificationList_set),
         'Hanger Rod Size': sorted(HangerRodSizeList_set),
         'Valve Number': sorted(ValveNumList_set),
-        'Beam Hanger': sorted(BeamHangerList_set)}
+        'Beam Hanger': sorted(BeamHangerList_set),
+        'Trimble Batch': sorted(TrimbleBatchList_set),
+        'Hanger Batch': sorted(HangerBatchList_set),
+        'Pipe Batch': sorted(PipeBatchList_set),
+        'Duct Batch': sorted(DuctBatchList_set)}
 
     res = forms.SelectFromList.show(GroupOptions,group_selector_title='Property Type:', multiselect=True, button_name='Select Item(s)', exitscript = True)
     
@@ -140,7 +155,11 @@ if preselection:
                        (fil in HangerRodSizeList_set and get_parameter_value_by_name_AsValueString(elem, 'FP_Rod Size') == fil) or \
                        (get_parameter_value_by_name_AsString(elem, 'Size of Primary End') == fil) or \
                        (get_parameter_value_by_name_AsString(elem, 'Comments') == fil) or \
-                       (Config.GetSpecificationName(elem.Specification) == fil):
+                       (Config.GetSpecificationName(elem.Specification) == fil) or \
+                       (fil in TrimbleBatchList_set and get_parameter_value_by_name_AsString(elem, 'Trimble Batch') == fil) or \
+                       (fil in HangerBatchList_set and get_parameter_value_by_name_AsString(elem, 'Hanger Batch') == fil) or \
+                       (fil in PipeBatchList_set and get_parameter_value_by_name_AsString(elem, 'Pipe Batch') == fil) or \
+                       (fil in DuctBatchList_set and get_parameter_value_by_name_AsString(elem, 'Duct Batch') == fil):
                         if elem.Id not in processed_ids:
                             elementList.append(elem.Id)
                             processed_ids.add(elem.Id)
@@ -189,6 +208,10 @@ else:
             SpecificationList = list(map(lambda x: Config.GetSpecificationName(x.Specification), part_collector))
             HangerRodSizeList = list(map(lambda x: get_parameter_value_by_name_AsValueString(x, 'FP_Rod Size'), hanger_collector))
             BeamHangerList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'FP_Beam Hanger'), hanger_collector))
+            TrimbleBatchList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Trimble Batch'), part_collector))
+            HangerBatchList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Hanger Batch'), part_collector))
+            PipeBatchList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Pipe Batch'), part_collector))
+            DuctBatchList = list(map(lambda x: get_parameter_value_by_name_AsString(x, 'Duct Batch'), part_collector))
 
         except:
             print('No Fabrication Parts in View')
@@ -215,10 +238,14 @@ else:
         REFLineNumList_set = set(REFLineNumList)
         ValveNumList_set = set(ValveNumList)
         SizeList_set = set(SizeList)
-        SpecificationList_set = set(SpecificationList)
+        SpecificationList_set =  set(SpecificationList)
         CommentsList_set = set(CommentsList)
-        HangerRodSizeList_set = set(HangerRodSizeList)  
-        BeamHangerList_set = set(BeamHangerList) 
+        HangerRodSizeList_set = set(HangerRodSizeList)
+        BeamHangerList_set = set(BeamHangerList)
+        TrimbleBatchList_set = set(TrimbleBatchList)
+        HangerBatchList_set = set(HangerBatchList)
+        PipeBatchList_set = set(PipeBatchList)
+        DuctBatchList_set = set(DuctBatchList)
 
         GroupOptions = {'CID': sorted(CID_set),
             'ServiceType': sorted(service_type_set),
@@ -238,7 +265,11 @@ else:
             'Specification': sorted(SpecificationList_set),
             'Hanger Rod Size': sorted(HangerRodSizeList_set),
             'Valve Number': sorted(ValveNumList_set),
-            'Beam Hanger': sorted(BeamHangerList_set)}
+            'Beam Hanger': sorted(BeamHangerList_set),
+            'Trimble Batch': sorted(TrimbleBatchList_set),
+            'Hanger Batch': sorted(HangerBatchList_set),
+            'Pipe Batch': sorted(PipeBatchList_set),
+            'Duct Batch': sorted(DuctBatchList_set)}
 
         res = forms.SelectFromList.show(GroupOptions,group_selector_title='Property Type:', multiselect=True, button_name='Select Item(s)', exitscript = True)
 
@@ -276,7 +307,11 @@ else:
                        (fil in CommentsList_set and get_parameter_value_by_name_AsString(elem, 'Comments') == fil) or \
                        (fil in SpecificationList_set and hasattr(elem, 'Specification') and Config.GetSpecificationName(elem.Specification) == fil) or \
                        (fil in SizeList_set and is_pipeduct and get_parameter_value_by_name_AsString(elem, 'Size') == fil) or \
-                       (fil in SizeList_set and is_hanger and get_parameter_value_by_name_AsString(elem, 'Size of Primary End') == fil):
+                       (fil in SizeList_set and is_hanger and get_parameter_value_by_name_AsString(elem, 'Size of Primary End') == fil) or \
+                       (fil in TrimbleBatchList_set and get_parameter_value_by_name_AsString(elem, 'Trimble Batch') == fil) or \
+                       (fil in HangerBatchList_set and get_parameter_value_by_name_AsString(elem, 'Hanger Batch') == fil) or \
+                       (fil in PipeBatchList_set and get_parameter_value_by_name_AsString(elem, 'Pipe Batch') == fil) or \
+                       (fil in DuctBatchList_set and get_parameter_value_by_name_AsString(elem, 'Duct Batch') == fil):
                         if elem.Id not in processed_ids:
                             elementList.append(elem.Id)
                             processed_ids.add(elem.Id)
