@@ -124,15 +124,14 @@ def Sync_FP_Params_Entire_Model():
                     set_parameter_by_name(hanger, 'FP_Hanger Shield', 'No')
                 else:
                     set_parameter_by_name(hanger, 'FP_Hanger Shield', 'Yes')
-
-                ItmDims = hanger.GetDimensions()
-                for dta in ItmDims:
-                    if dta.Name == 'Length A':
-                        RLA = hanger.GetDimensionValue(dta)
-                set_parameter_by_name(hanger, 'FP_Rod Length', RLA)
-                set_parameter_by_name(hanger, 'FP_Rod Length A', RLA)
             except:
                 pass
+            ItmDims = hanger.GetDimensions()
+            for dta in ItmDims:
+                if dta.Name == 'Length A':
+                    RLA = hanger.GetDimensionValue(dta)
+            set_parameter_by_name(hanger, 'FP_Rod Length', RLA)
+            set_parameter_by_name(hanger, 'FP_Rod Length A', RLA)
         try:
             if (hanger.GetRodInfo().RodCount) > 1:
                 ItmDims = hanger.GetDimensions()
