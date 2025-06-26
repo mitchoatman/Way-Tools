@@ -32,9 +32,9 @@ param_id = ElementId(BuiltInParameter.FABRICATION_PART_MATERIAL)
 provider = ParameterValueProvider(param_id)
 evaluator = FilterStringBeginsWith()
 if RevitVersion <= 2021:
-    rule = FilterStringRule(provider, evaluator, "Cast Iron:", True)
+    rule = FilterStringRule(provider, evaluator, "Cast Iron", True)
 else:
-    rule = FilterStringRule(provider, evaluator, "Cast Iron:")
+    rule = FilterStringRule(provider, evaluator, "Cast Iron")
 material_filter = ElementParameterFilter(rule)
 
 pipe_collector = FilteredElementCollector(doc, curview.Id) \
