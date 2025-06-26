@@ -9,7 +9,7 @@ RevitINT = float(RevitVersion)
 
 def Shared_Params():
     path, filename = os.path.split(__file__)
-    NewFilename = 'MC Shared Parameters.txt'
+    NewFilename = 'WAY Shared Parameters.txt'
     fullPath = os.path.join(path, NewFilename)
 
     # Define categories
