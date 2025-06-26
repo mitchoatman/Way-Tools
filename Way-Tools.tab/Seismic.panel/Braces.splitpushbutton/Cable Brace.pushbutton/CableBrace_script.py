@@ -42,7 +42,9 @@ def stretch_brace(family_instance, valuenum):
         set_parameter_by_name(family_instance, "BraceLength", (newhypotenus + 0.083333))
         # Writes Level into Brace
         set_parameter_by_name(new_family_instance, "ISAT Brace Level", HangerLevel)
-        set_parameter_by_name(new_family_instance, "FP_Service Name", HangerService)
+        # Only set FP_Service Name if parameter exists
+        if new_family_instance.LookupParameter("FP_Service Name"):
+            set_parameter_by_name(new_family_instance, "FP_Service Name", HangerService)
     except:
         pass
 
