@@ -3,7 +3,7 @@ import clr
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector, BuiltInCategory, BuiltInParameter,
-    ElementParameterFilter, FilterStringRule, ParameterValueProvider, FilterStringBeginsWith,
+    ElementParameterFilter, FilterStringRule, ParameterValueProvider, FilterStringEndsWith,
     ElementId
 )
 from Autodesk.Revit.UI import TaskDialog
@@ -30,11 +30,11 @@ def get_parameter_value_by_name_AsValueString(elem, param_name):
 # --- Filter for pipes with material "PVC:" ---
 param_id = ElementId(BuiltInParameter.FABRICATION_PART_MATERIAL)
 provider = ParameterValueProvider(param_id)
-evaluator = FilterStringBeginsWith()
+evaluator = FilterStringEndsWith()
 if RevitVersion <= 2021:
-    rule = FilterStringRule(provider, evaluator, "PVC:", True)
+    rule = FilterStringRule(provider, evaluator, "PVC", True)
 else:
-    rule = FilterStringRule(provider, evaluator, "PVC:")
+    rule = FilterStringRule(provider, evaluator, "PVC")
 material_filter = ElementParameterFilter(rule)
 
 pipe_collector = FilteredElementCollector(doc, curview.Id) \

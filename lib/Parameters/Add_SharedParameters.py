@@ -1,14 +1,15 @@
 import os
-from Autodesk.Revit.DB import BuiltInCategory, Transaction, FilteredElementCollector, SharedParameterElement, InstanceBinding
+from Autodesk.Revit.DB import BuiltInCategory, Transaction, TransactionGroup, FilteredElementCollector, ParameterElement, SharedParameterElement
 
 doc = __revit__.ActiveUIDocument.Document
+uidoc = __revit__.ActiveUIDocument
 app = doc.Application
 RevitVersion = app.VersionNumber
 RevitINT = float(RevitVersion)
 
 def Shared_Params():
     path, filename = os.path.split(__file__)
-    NewFilename = 'WAY Shared Parameters.txt'
+    NewFilename = 'MC Shared Parameters.txt'
     fullPath = os.path.join(path, NewFilename)
 
     # Define categories
@@ -35,6 +36,7 @@ def Shared_Params():
     STRATUScatSet.Insert(cat8)
     STRATUScatSet.Insert(cat9)
     STRATUScatSet.Insert(cat10)
+    STRATUScatSet.Insert(cat11)
 
     t = Transaction(doc, 'Add Parameters')
     t.Start()
@@ -53,21 +55,16 @@ def Shared_Params():
                 for eD in definitions:
                     param_name = eD.Name
                     param_guid = str(eD.GUID)
+                    # Check if parameter already exists
                     if param_name in existing_param_names:
                         if existing_param_names[param_name] == param_guid:
-                            if param_name in ['FP_Service Name', 'FP_Beam Hanger']:
-                                # Update existing parameter with Structural Stiffener
-                                binding_map = doc.ParameterBindings
-                                binding = binding_map[eD]
-                                if isinstance(binding, InstanceBinding):
-                                    binding.Categories.Insert(cat11)
-                                    binding_map.ReInsert(eD, binding)
-                                    # print("Added Structural Stiffener to parameter '{}'.".format(param_name))
+                            # print("Parameter '{}' already exists with matching GUID, skipping.".format(param_name))
                             continue
                         else:
                             continue
                     newIB = app.Create.NewInstanceBinding(category_set)
                     doc.ParameterBindings.Insert(eD, newIB, group_type)
+                    # print("Added parameter '{}' with GUID {}.".format(param_name, param_guid))
 
     if RevitINT > 2024:
         from Autodesk.Revit.DB import GroupTypeId
