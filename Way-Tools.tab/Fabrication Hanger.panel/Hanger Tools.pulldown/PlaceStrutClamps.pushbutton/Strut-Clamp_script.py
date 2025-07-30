@@ -69,6 +69,23 @@ def get_pipe_size(pipe):
             diameter = 0.5
     return diameter / 12  # Convert to feet
 
+def get_OD(pipe):
+    outside_diameter_param = pipe.get_Parameter(DB.BuiltInParameter.RBS_PIPE_OUTER_DIAMETER).AsValueString()
+    cleaned_size = re.sub(r'["]', '', outside_diameter_param.strip())
+    try:
+        rad = float(cleaned_size) / 2
+
+    except ValueError:
+        match = re.match(r'(?:(\d+)[-\s])?(\d+/\d+)', cleaned_size)
+        if match:
+            integer_part, fraction_part = match.groups()
+            rad = float(Fraction(fraction_part))
+            if integer_part:
+                rad += float(integer_part) / 2
+        else:
+            rad = 0.25
+    return rad / 12  # Convert to feet
+
 def get_hanger_origin(hanger):
     origin = hanger.Origin
     if isinstance(origin, DB.XYZ):
@@ -141,6 +158,7 @@ try:
         if target_famtype:
             for pipe in pipes:
                 pipe_size = get_pipe_size(pipe)
+                pipe_od = get_OD(pipe)
                 centerline = get_pipe_centerline(pipe)
                 pipe_level = get_pipe_reference_level(pipe)
 
@@ -166,6 +184,10 @@ try:
                         diameter_param = new_lrd.LookupParameter("Diameter")
                         if diameter_param:
                             diameter_param.Set(pipe_size)
+
+                        rad_param = new_lrd.LookupParameter("rad")
+                        if rad_param:
+                            rad_param.Set(pipe_od)
 
                         pipe_connectors = list(pipe.ConnectorManager.Connectors)
                         vec_x = pipe_connectors[1].Origin.X - pipe_connectors[0].Origin.X
