@@ -1,5 +1,5 @@
 from Autodesk.Revit import DB
-from Autodesk.Revit.UI.Selection import ObjectType
+from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from Autodesk.Revit.DB import (
     FilteredElementCollector,
     Family,
@@ -7,7 +7,8 @@ from Autodesk.Revit.DB import (
     FamilySymbol,
     LocationCurve,
     Transaction,
-    LinkElementId
+    LinkElementId,
+    Wall
 )
 from Parameters.Get_Set_Params import (
     set_parameter_by_name,
@@ -48,6 +49,25 @@ with open(filepath, 'r') as f:
 
 # Get the level associated with the active view
 level = active_view.GenLevel
+
+class LinkedWallSelectionFilter(ISelectionFilter):
+    def AllowElement(self, element):
+        # Allow all RevitLinkInstances to be clickable
+        return isinstance(element, DB.RevitLinkInstance)
+
+    def AllowReference(self, reference, position):
+        try:
+            link_instance = doc.GetElement(reference.ElementId)
+            if not isinstance(link_instance, DB.RevitLinkInstance):
+                return False
+            linked_doc = link_instance.GetLinkDocument()
+            linked_elem = linked_doc.GetElement(reference.LinkedElementId)
+            return isinstance(linked_elem, DB.Wall)
+        except:
+            return False
+
+
+
 
 # Define family loading options handler
 class FamilyLoaderOptionsHandler(DB.IFamilyLoadOptions):
@@ -102,28 +122,36 @@ DIAMETER_MAP = {
     (16.5, 18.5): 20.0
 }
 
-def select_fabrication_pipe():
-    """Prompt user to select an MEP Fabrication Pipe"""
-    print("Prompting user to select an MEP Fabrication Pipe...")
-    pipe = doc.GetElement(uidoc.Selection.PickObject(ObjectType.Element, 
-                                                    "Select an MEP Fabrication Pipe").ElementId)
-    print("Pipe selected: Element ID = {}".format(pipe.Id))
-    return pipe
+# Custom selection filter for pipes
+class PipeSelectionFilter(ISelectionFilter):
+    def AllowElement(self, element):
+        return element.Category.Id.IntegerValue == int(BuiltInCategory.OST_FabricationPipework)
+    def AllowReference(self, reference, position):
+        return False
+
+def select_fabrication_pipes():
+    try:
+        refs = uidoc.Selection.PickObjects(ObjectType.Element, PipeSelectionFilter(), 
+                                          "Select one or more MEP Fabrication Pipes (press Esc to finish)")
+        pipes = [doc.GetElement(ref.ElementId) for ref in refs]
+        if not pipes:
+            print("Error: No pipes selected.")
+            raise Exception("No pipes selected.")
+        return pipes
+    except Exception as e:
+        print("Error selecting pipes: {}".format(str(e)))
+        raise
 
 def select_linked_wall():
-    """Prompt user to select a wall in a Revit link"""
-    print("Prompting user to select a wall in a Revit link...")
     try:
-        ref = uidoc.Selection.PickObject(ObjectType.LinkedElement, "Select a wall in a Revit link")
-        print("Wall selected: LinkedElementId = {}".format(ref.LinkedElementId))
+        ref = uidoc.Selection.PickObject(ObjectType.LinkedElement, LinkedWallSelectionFilter(), "Select a wall in a Revit link")
         return ref
     except Exception as e:
         print("Error selecting linked wall: {}".format(str(e)))
         raise
 
+
 def get_wall_thickness_and_location(doc, link_ref):
-    """Get wall thickness and location from linked wall"""
-    print("Retrieving wall thickness and location...")
     link_id = link_ref.LinkedElementId
     link_doc = doc.GetElement(link_ref.ElementId).GetLinkDocument()
     if not link_doc:
@@ -134,38 +162,28 @@ def get_wall_thickness_and_location(doc, link_ref):
         print("Error: Selected element is not a valid wall.")
         raise Exception("Selected element is not a valid wall.")
     thickness = wall.WallType.get_Parameter(DB.BuiltInParameter.WALL_ATTR_WIDTH_PARAM).AsDouble()
-    print("Wall thickness retrieved: {} feet".format(thickness))
     location = wall.Location
     if isinstance(location, LocationCurve):
-        print("Wall location curve retrieved successfully.")
         return thickness, location.Curve
     print("Error: Selected wall does not have a valid location curve.")
     raise Exception("Selected wall does not have a valid location curve.")
 
 def get_pipe_centerline(pipe):
-    """Get the centerline curve from a pipe element"""
-    print("Retrieving pipe centerline...")
     pipe_location = pipe.Location
     if isinstance(pipe_location, LocationCurve):
-        print("Pipe centerline retrieved successfully.")
         return pipe_location.Curve
     print("Error: Selected pipe does not have a valid centerline.")
     raise Exception("Selected pipe does not have a valid centerline.")
 
 def get_diameter_from_size(pipe_diameter):
-    """Convert pipe diameter to sleeve diameter using mapping"""
-    print("Calculating sleeve diameter from pipe diameter: {} inches".format(pipe_diameter * 12))
     pipe_diameter *= 12  # Convert to inches
     for (min_val, max_val), sleeve_size in DIAMETER_MAP.items():
         if min_val < pipe_diameter < max_val:
-            print("Sleeve diameter set to: {} inches".format(sleeve_size))
             return sleeve_size / 12  # Convert back to feet
     print("Using default sleeve diameter: 2.0 inches")
     return 2.0 / 12  # Default minimum size
 
 def project_wall_curve_to_pipe_plane(wall_curve, pipe_curve):
-    """Project wall curve onto pipe's plane to ensure intersection"""
-    print("Projecting wall curve onto pipe's plane...")
     pipe_start = pipe_curve.GetEndPoint(0)
     pipe_end = pipe_curve.GetEndPoint(1)
     pipe_direction = (pipe_end - pipe_start).Normalize()
@@ -189,21 +207,14 @@ def project_wall_curve_to_pipe_plane(wall_curve, pipe_curve):
     projected_start = origin + x_axis * uv_start.U + y_axis * uv_start.V
     projected_end = origin + x_axis * uv_end.U + y_axis * uv_end.V
     
-    print("Projected start point: {}".format(projected_start))
-    print("Projected end point: {}".format(projected_end))
-    
-    # Create new projected curve
     try:
         projected_curve = DB.Line.CreateBound(projected_start, projected_end)
-        print("Wall curve projected successfully.")
         return projected_curve
     except Exception as e:
         print("Error projecting wall curve: {}".format(str(e)))
         raise
 
 def place_and_modify_family(pipe, wall_ref, famsymb):
-    """Place and configure a family instance aligned with a pipe and wall"""
-    print("Starting sleeve placement process...")
     centerline_curve = get_pipe_centerline(pipe)
     wall_thickness, wall_curve = get_wall_thickness_and_location(doc, wall_ref)
     
@@ -211,7 +222,6 @@ def place_and_modify_family(pipe, wall_ref, famsymb):
     wall_curve = project_wall_curve_to_pipe_plane(wall_curve, centerline_curve)
     
     # Get intersection point between pipe and projected wall curve
-    print("Checking for intersection between pipe and projected wall...")
     intersection_result = centerline_curve.Intersect(wall_curve)
     if intersection_result != DB.SetComparisonResult.Overlap:
         print("Error: Pipe does not intersect with the projected wall curve.")
@@ -222,17 +232,11 @@ def place_and_modify_family(pipe, wall_ref, famsymb):
     centerline_curve.Intersect(wall_curve, result_array)
     if result_array.Value and result_array.Value.Size > 0:
         intersection_point = result_array.Value[0].XYZPoint
-        print("Intersection point found: {}".format(intersection_point))
     else:
         print("Error: Failed to retrieve intersection point.")
         raise Exception("Failed to retrieve intersection point.")
 
-    # Use pipe elevation for sleeve
-    pipe_elevation = intersection_point.Z
-    print("Pipe elevation: {} feet".format(pipe_elevation))
-
     # Calculate offset to align sleeve start with wall face
-    print("Calculating sleeve offset to align with wall face...")
     connectors = list(pipe.ConnectorManager.Connectors)
     conn1, conn2 = connectors[0], connectors[1]
     nearest_conn = min([conn1, conn2], key=lambda c: intersection_point.DistanceTo(c.Origin))
@@ -240,26 +244,21 @@ def place_and_modify_family(pipe, wall_ref, famsymb):
     pipe_direction = (other_conn.Origin - nearest_conn.Origin).Normalize()
     offset_distance = wall_thickness / 2.0
     insertion_point = intersection_point - pipe_direction * offset_distance
-    print("Adjusted insertion point: {}".format(insertion_point))
 
     # Create new family instance at adjusted point
-    print("Creating new family instance at: {}".format(insertion_point))
     new_family_instance = doc.Create.NewFamilyInstance(insertion_point, famsymb, 
                                                      level, DB.Structure.StructuralType.NonStructural)
     if not new_family_instance:
         print("Error: Failed to create family instance.")
         raise Exception("Failed to create family instance.")
-    print("Family instance created: Element ID = {}".format(new_family_instance.Id))
 
     # Calculate and set diameter with improved fraction handling
     overall_size = get_parameter_value_by_name_AsString(pipe, 'Overall Size')
-    print("Pipe overall size: {}".format(overall_size))
     cleaned_size = re.sub(r'["]', '', overall_size.strip())  # Remove inch mark
     
     try:
         # Try direct float conversion for decimal or whole numbers
         diameter = float(cleaned_size)
-        print("Parsed diameter: {} inches".format(diameter))
     except ValueError:
         # Handle fractions like "1/2", "3/4", "5/8", "1/4"
         match = re.match(r'(?:(\d+)[-\s])?(\d+/\d+)', cleaned_size)
@@ -268,28 +267,21 @@ def place_and_modify_family(pipe, wall_ref, famsymb):
             diameter = float(Fraction(fraction_part))
             if integer_part:
                 diameter += float(integer_part)
-            print("Parsed fractional diameter: {} inches".format(diameter))
         else:
-            # Default to 0.5 if parsing fails
             print("Warning: Could not parse diameter '{0}', defaulting to 0.5\"".format(overall_size))
             diameter = 0.5
     
     diameter = diameter / 12  # Convert inches to feet
     sleeve_diameter = get_diameter_from_size(diameter)
-    print("Setting sleeve diameter: {} feet".format(sleeve_diameter))
     set_parameter_by_name(new_family_instance, 'Diameter', sleeve_diameter)
-    print("Setting sleeve length: {} feet".format(wall_thickness))
     set_parameter_by_name(new_family_instance, 'Length', wall_thickness)
     
     # Align family with pipe
-    print("Aligning sleeve with pipe...")
     vec = other_conn.Origin - nearest_conn.Origin
     angle = atan2(vec.Y, vec.X)
-    print("Calculated rotation angle: {} degrees".format(degrees(angle)))
     axis = DB.Line.CreateBound(insertion_point, 
                              DB.XYZ(insertion_point.X, insertion_point.Y, insertion_point.Z + 1))
     DB.ElementTransformUtils.RotateElement(doc, new_family_instance.Id, axis, angle)
-    print("Sleeve rotated successfully.")
     
     # Set family parameters
     params = {
@@ -299,23 +291,18 @@ def place_and_modify_family(pipe, wall_ref, famsymb):
     }
     for fam_param, pipe_param in params.items():
         value = get_parameter_value_by_name_AsString(pipe, pipe_param)
-        print("Setting parameter {}: {}".format(fam_param, value))
         set_parameter_by_name(new_family_instance, fam_param, value)
     
-    print("Setting schedule level: {}".format(level.Name))
     new_family_instance.LookupParameter("Schedule Level").Set(level.Id)
-    print("Sleeve placement completed.")
 
 # Main execution loop
-while True:
-    try:
-        with Transaction(doc, 'Place Wall Sleeve Family') as t:
-            t.Start()
-            pipe = select_fabrication_pipe()
-            wall_ref = select_linked_wall()
+try:
+    with Transaction(doc, 'Place Wall Sleeve Family') as t:
+        t.Start()
+        pipes = select_fabrication_pipes()
+        wall_ref = select_linked_wall()
+        for pipe in pipes:
             place_and_modify_family(pipe, wall_ref, famsymb)
-            t.Commit()
-            print("Transaction committed successfully.")
-    except Exception as e:
-        print("Error during execution: {}".format(str(e)))
-        break
+        t.Commit()
+except Exception as e:
+    print("Error during execution: {}".format(str(e)))
