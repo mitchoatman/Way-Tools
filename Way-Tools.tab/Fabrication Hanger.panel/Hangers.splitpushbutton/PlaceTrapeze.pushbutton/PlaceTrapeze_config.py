@@ -212,6 +212,7 @@ try:
                 self.DialogResult = DialogResult.OK
                 self.Close()
 
+        # Instantiate and show the dialog
         form = HangerSpacingDialog(buttonnames, lines, checkboxdefBOI, checkboxdef)
         if form.ShowDialog() == DialogResult.OK:
             Selectedbutton = form.combobox_hanger.Text
@@ -220,7 +221,7 @@ try:
             BOITrap = form.checkbox_boi.Checked
             AtoS = form.checkbox_attach.Checked
             SelectedServiceName = form.combobox_service.Text
-
+            
             # Validate numeric inputs
             try:
                 distancefromend = float(distancefromend)
@@ -228,21 +229,19 @@ try:
             except ValueError:
                 print("Invalid input: Distance from End or Spacing must be numeric.")
                 raise Exception("Invalid numeric input.")
-
+            
             # Gets matching index of selected service
             try:
                 Servicenum = servicenamelist.index(SelectedServiceName)
             except ValueError:
                 print("Selected service '{}' not found.".format(SelectedServiceName))
                 raise Exception("Selected service not found.")
-
-            # Find the selected button and its service
+            
+            # Find the selected button
             button_found = False
             fab_btn = None
-            fab_service = None
             for servicenum, service in enumerate(LoadedServices):
                 if service.Name == SelectedServiceName:
-                    fab_service = service
                     palette_count = service.PaletteCount if RevitINT > 2022 else service.GroupCount
                     for palette_idx in range(palette_count):
                         button_count = service.GetButtonCount(palette_idx)
@@ -256,127 +255,124 @@ try:
                             break
                     if button_found:
                         break
-
+            
             if not button_found:
-                print("Button '{}' not found in service '{}'".format(Selectedbutton, SelectedServiceName))
+                print("'{}' not found in '{}'".format(Selectedbutton, SelectedServiceName))
                 raise Exception("Hanger button not found.")
-
-            # Determine valid condition index
-            condition_index = 0  # Default to 0
-            if fab_btn.ConditionCount > 0:
-                condition_index = 0  # Use the first condition
-
+            
             # Write values to text file
             with open(filepath, 'w') as the_file:
-                lines = [Selectedbutton + '\n', str(distancefromend) + '\n', str(Spacing) + '\n',
+                lines = [str(Selectedbutton) + '\n', str(distancefromend) + '\n', str(Spacing) + '\n',
                          SelectedServiceName + '\n', str(AtoS) + '\n', str(BOITrap)]
                 the_file.writelines(lines)
-
+            
+            # Helper functions
             def GetCenterPoint(ele_id):
                 bBox = doc.GetElement(ele_id).get_BoundingBox(None)
                 if bBox:
                     center = (bBox.Max + bBox.Min) / 2
                     return center
                 else:
+                    print("No bounding box found for element {}".format(ele_id))
                     return XYZ(0, 0, 0)
-
+            
             def myround(x, multiple):
                 return multiple * math.ceil(x / multiple)
-
-            # Get diameter from "Outside Diameter" parameter
+            
             def get_diameter(pipe):
                 param = pipe.LookupParameter("Outside Diameter")
                 if param and param.HasValue:
                     return param.AsDouble()
                 print("Outside Diameter parameter not found for pipe {}. Assuming 0.".format(pipe.Id))
                 return 0.0
-
-            # Compute direction and perpendicular vectors
+            
+            def get_reference_level(hanger):
+                level_id = hanger.LevelId
+                level = doc.GetElement(level_id)
+                return level
+            
+            def get_level_elevation(level):
+                if level:
+                    return level.Elevation
+                return 0.0
+            
+            # Determine pipe direction from the first pipe's location curve
             curve = element.Location.Curve
             if not curve or not curve.IsBound:
                 print("Invalid location curve for element {}".format(element.Id))
                 raise Exception("Pipe must have a valid location curve.")
+            
+            # Get direction vector in XY plane (ignore Z for rotation on Z-axis)
             dir_vec = (curve.GetEndPoint(1) - curve.GetEndPoint(0)).Normalize()
-            perp_vec = XYZ(-dir_vec.Y, dir_vec.X, 0).Normalize()
-
-            # Collect endpoints
+            dir_vec = XYZ(dir_vec.X, dir_vec.Y, 0).Normalize()  # Ensure Z is 0
+            perp_vec = XYZ(-dir_vec.Y, dir_vec.X, 0).Normalize()  # Perpendicular vector in XY plane
+            
+            # Compute midpoints of both pipes
+            midpoints = []
+            for pipe in selected_elements:
+                c = pipe.Location.Curve
+                if c and c.IsBound:
+                    mid = (c.GetEndPoint(0) + c.GetEndPoint(1)) / 2
+                    midpoints.append(mid)
+                else:
+                    print("Invalid location curve for pipe {}".format(pipe.Id))
+                    raise Exception("Pipe must have a valid location curve.")
+            
+            # Compute center point between the two pipes in the perpendicular direction
+            perp_projs = [mid.DotProduct(perp_vec) for mid in midpoints]
+            min_perp = min(perp_projs)
+            max_perp = max(perp_projs)
+            center_perp = (min_perp + max_perp) / 2
+            
+            # Adjust for pipe diameter and insulation
+            widths = []
+            for pipe in selected_elements:
+                thick = pipe.InsulationThickness if pipe.HasInsulation else 0
+                half_size = get_diameter(pipe) / 2 + thick
+                widths.append(half_size)
+            
+            # Compute effective width (distance between outermost edges)
+            width = abs(max_perp - min_perp) + widths[0] + widths[1]
+            
+            # Compute projections along direction to find length
             endpoints = []
             for pipe in selected_elements:
                 c = pipe.Location.Curve
                 if c and c.IsBound:
                     endpoints.append(c.GetEndPoint(0))
                     endpoints.append(c.GetEndPoint(1))
-                else:
-                    print("Invalid location curve for pipe {}".format(pipe.Id))
-                    raise Exception("Pipe must have a valid location curve.")
-
-            # Compute projections along direction
+            
             projs_along = [p.DotProduct(dir_vec) for p in endpoints]
             min_along = min(projs_along)
             max_along = max(projs_along)
             length_along = max_along - min_along
-
-            # Compute effective width and center in perpendicular direction
-            min_perp = float('inf')
-            max_perp = float('-inf')
+            
+            # Compute Z bounds for elevation
+            combined_min_z = float('inf')
+            combined_max_z = float('-inf')
             for pipe in selected_elements:
-                mid = (pipe.Location.Curve.GetEndPoint(0) + pipe.Location.Curve.GetEndPoint(1)) / 2
-                center_perp = mid.DotProduct(perp_vec)
-                thick = pipe.InsulationThickness if pipe.HasInsulation else 0
-                half_size = get_diameter(pipe) / 2 + thick
-                pipe_min_perp = center_perp - half_size
-                pipe_max_perp = center_perp + half_size
-                min_perp = min(min_perp, pipe_min_perp)
-                max_perp = max(max_perp, pipe_max_perp)
-            width = max_perp - min_perp
-            center_perp = (min_perp + max_perp) / 2
-
-            # Compute combined bounding box for Z references
-            combined_min = None
-            combined_max = None
-            for pipe in selected_elements:
-                pipe_bounding_box = pipe.get_BoundingBox(curview)
-                if not pipe_bounding_box:
-                    continue
-                if combined_min is None:
-                    combined_min = pipe_bounding_box.Min
-                    combined_max = pipe_bounding_box.Max
-                else:
-                    combined_min = XYZ(min(combined_min.X, pipe_bounding_box.Min.X),
-                                       min(combined_min.Y, pipe_bounding_box.Min.Y),
-                                       min(combined_min.Z, pipe_bounding_box.Min.Z))
-                    combined_max = XYZ(max(combined_max.X, pipe_bounding_box.Max.X),
-                                       max(combined_max.Y, pipe_bounding_box.Max.Y),
-                                       max(combined_max.Z, pipe_bounding_box.Max.Z))
-            if combined_min is None or combined_max is None:
-                print("No valid bounding boxes found for selected pipes.")
-                raise Exception("Invalid bounding boxes.")
-            combined_bounding_box = BoundingBoxXYZ()
-            combined_bounding_box.Min = combined_min
-            combined_bounding_box.Max = combined_max
-            combined_bounding_box_Center = (combined_max + combined_min) / 2
-
-            # Get reference level
-            def get_reference_level(hanger):
-                level_id = hanger.LevelId
-                level = doc.GetElement(level_id)
-                return level
-
-            def get_level_elevation(level):
-                if level:
-                    return level.Elevation
-                return 0.0
-
-            # Setup spacing
+                pipe_bb = pipe.get_BoundingBox(curview)
+                if pipe_bb:
+                    thick = pipe.InsulationThickness if pipe.HasInsulation else 0
+                    if pipe.HasInsulation and BOITrap:
+                        combined_min_z = min(combined_min_z, pipe_bb.Min.Z - thick)
+                        combined_max_z = max(combined_max_z, pipe_bb.Max.Z + thick)
+                    else:
+                        combined_min_z = min(combined_min_z, pipe_bb.Min.Z)
+                        combined_max_z = max(combined_max_z, pipe_bb.Max.Z)
+            
+            center_z = combined_min_z if BOITrap else (combined_min_z + combined_max_z) / 2
+            
+            # Calculate number of hangers
             qtyofhgrs = int(math.ceil(length_along / Spacing))
-
+            
             # Place hangers at default location (0,0,0)
             hangers = []
             t = Transaction(doc, 'Place Trapeze Hanger')
             t.Start()
             for hgr in range(qtyofhgrs):
                 try:
-                    hanger = FabricationPart.CreateHanger(doc, fab_btn, condition_index, level_id)
+                    hanger = FabricationPart.CreateHanger(doc, fab_btn, 0, level_id)
                     if hanger:
                         hangers.append(hanger)
                     else:
@@ -384,38 +380,79 @@ try:
                 except Exception as e:
                     print("Error creating hanger {}: {}".format(hgr + 1, str(e)))
             t.Commit()
-
+            
             if not hangers:
                 print("No hangers were created. Check fabrication service and button compatibility.")
                 raise Exception("Hanger creation failed.")
-
-            # Move and modify hangers
+            
+# Move and modify hangers
             t = Transaction(doc, 'Modify Trapeze Hanger')
             t.Start()
             IncrementSpacing = distancefromend
+            
+            # Find the closest endpoint and compute midpoints
+            endpoints = []
+            midpoints = []
+            thicknesses = []
+            diameters = []
+            for pipe in selected_elements:
+                c = pipe.Location.Curve
+                if c and c.IsBound:
+                    endpoints.extend([c.GetEndPoint(0), c.GetEndPoint(1)])
+                    mid = (c.GetEndPoint(0) + c.GetEndPoint(1)) / 2
+                    midpoints.append(mid)
+                    thick = pipe.InsulationThickness if hasattr(pipe, 'InsulationThickness') and pipe.HasInsulation else 0.0
+                    thicknesses.append(thick)
+                    diam = get_diameter(pipe)
+                    diameters.append(diam)
+                else:
+                    print("Invalid location curve for pipe {}".format(pipe.Id))
+                    raise Exception("Pipe must have a valid location curve.")
+            
+            # Use the endpoint closest to the origin (0,0,0)
+            ref_point = min(endpoints, key=lambda p: p.DistanceTo(XYZ(0, 0, 0)))
+            print("Reference point: X={:.2f}, Y={:.2f}, Z={:.2f}".format(ref_point.X, ref_point.Y, ref_point.Z))
+            
+            # Debug: Log pipe endpoints, midpoints, diameters, and insulation
+            for i, ep in enumerate(endpoints):
+                print("Pipe endpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, ep.X, ep.Y, ep.Z))
+            for i, mid in enumerate(midpoints):
+                print("Pipe midpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, mid.X, mid.Y, mid.Z))
+            for i, (diam, thick) in enumerate(zip(diameters, thicknesses)):
+                print("Pipe {} diameter: {:.2f}, insulation thickness: {:.2f}".format(i, diam, thick))
+            
+            # Recalculate direction and perpendicular vectors
+            curve = selected_elements[0].Location.Curve
+            dir_vec = (curve.GetEndPoint(1) - curve.GetEndPoint(0)).Normalize()
+            dir_vec = XYZ(dir_vec.X, dir_vec.Y, 0).Normalize()  # Ensure Z=0
+            perp_vec = XYZ(-dir_vec.Y, dir_vec.X, 0).Normalize()  # Perpendicular in XY plane
+            print("Direction vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(dir_vec.X, dir_vec.Y, dir_vec.Z))
+            print("Perpendicular vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(perp_vec.X, perp_vec.Y, perp_vec.Z))
+            
+            # Recalculate center_perp using projections onto perp_vec
+            perp_projs = []
+            for i, mid in enumerate(midpoints):
+                proj = (mid - ref_point).DotProduct(perp_vec)
+                half_size = diameters[i] / 2 + thicknesses[i]
+                perp_projs.append(proj - half_size)  # Min edge
+                perp_projs.append(proj + half_size)  # Max edge
+            center_perp = (min(perp_projs) + max(perp_projs)) / 2
+            print("Perpendicular projections (adjusted for diameter/insulation): {}".format(["{:.2f}".format(float(p)) for p in perp_projs]))
+            print("Center perpendicular: {:.2f}".format(float(center_perp)))
+            
+            # Recalculate projections along the pipe direction
+            projs_along = [(p - ref_point).DotProduct(dir_vec) for p in endpoints]
+            min_along = min(projs_along)
+            print("Min along projection: {:.2f}".format(float(min_along)))
+            
+            # Set center_z to pipe elevation
+            center_z = midpoints[0].Z  # Use pipe elevation
+            if BOITrap:
+                center_z = PRTElevation
+            print("Center Z: {:.2f}, BOITrap: {}, PRTElevation: {:.2f}".format(center_z, BOITrap, PRTElevation))
+            
             for idx, hanger in enumerate(hangers):
-                # Compute target position
-                along = min_along + IncrementSpacing
-                pos = dir_vec * along + perp_vec * center_perp + XYZ(0, 0, PRTElevation if BOITrap else combined_bounding_box_Center.Z)
-                IncrementSpacing += Spacing
-
-                # Move hanger from default location
-                center = GetCenterPoint(hanger.Id)
-                translation = pos - center
-                try:
-                    ElementTransformUtils.MoveElement(doc, hanger.Id, translation)
-                except Exception as e:
-                    print("Error moving hanger {}: {}".format(hanger.Id, str(e)))
-
-                # Rotate hanger
-                z_axis = Line.CreateBound(pos, pos + XYZ(0, 0, 1))
-                angle_rad = math.atan2(dir_vec.Y, dir_vec.X)
-                try:
-                    ElementTransformUtils.RotateElement(doc, hanger.Id, z_axis, angle_rad)
-                except Exception as e:
-                    print("Error rotating hanger {}: {}".format(hanger.Id, str(e)))
-
-                # Set dimensions
+                # Set dimensions first
                 newwidth = myround(width * 12, 2) / 12
                 for dim in hanger.GetDimensions():
                     dim_name = dim.Name
@@ -426,7 +463,31 @@ try:
                             hanger.SetDimensionValue(dim, 0.25)
                     except Exception as e:
                         print("Error setting dimension '{}' for hanger {}: {}".format(dim_name, hanger.Id, str(e)))
-
+                
+                # Rotate hanger to align with pipe direction
+                center = GetCenterPoint(hanger.Id)
+                z_axis = Line.CreateBound(center, center + XYZ(0, 0, 1))
+                angle_rad = math.atan2(dir_vec.Y, dir_vec.X)
+                try:
+                    ElementTransformUtils.RotateElement(doc, hanger.Id, z_axis, angle_rad)
+                except Exception as e:
+                    print("Error rotating hanger {}: {}".format(hanger.Id, str(e)))
+                
+                # Compute target position
+                along = min_along + IncrementSpacing
+                pos = ref_point + dir_vec * along + perp_vec * center_perp + XYZ(0, 0, center_z)
+                IncrementSpacing += Spacing
+                print("Hanger {} target position: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, pos.X, pos.Y, pos.Z))
+                
+                # Move hanger
+                center = GetCenterPoint(hanger.Id)
+                print("Hanger {} current center: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, center.X, center.Y, center.Z))
+                translation = pos - center
+                try:
+                    ElementTransformUtils.MoveElement(doc, hanger.Id, translation)
+                except Exception as e:
+                    print("Error moving hanger {}: {}".format(hanger.Id, str(e)))
+                
                 # Set offset
                 reference_level = get_reference_level(hanger)
                 elevation = get_level_elevation(reference_level)
@@ -435,21 +496,24 @@ try:
                     if BOITrap:
                         offset_param.Set(PRTElevation)
                     else:
-                        offset_value = combined_bounding_box.Min.Z - elevation
+                        offset_value = center_z - elevation
                         offset_param.Set(offset_value)
                 except Exception as e:
                     print("Error setting offset for hanger {}: {}".format(hanger.Id, str(e)))
-
+                
                 if AtoS:
                     try:
                         hanger.GetRodInfo().AttachToStructure()
                     except Exception as e:
                         print("Error attaching hanger {} to structure: {}".format(hanger.Id, str(e)))
-
+            
             t.Commit()
+        
         else:
             print("Dialog cancelled.")
+    
     else:
         print("Coming Soon... \nYou will be able to place a trapeze on a ptrap")
+
 except Exception as e:
     print("Script error: {}".format(str(e)))
