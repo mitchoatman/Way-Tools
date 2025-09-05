@@ -390,7 +390,17 @@ try:
             t.Start()
             IncrementSpacing = distancefromend
             
-            # Find the closest endpoint and compute midpoints
+            # Find the closest endpoint of the first selected pipe
+            first_pipe = selected_elements[0]
+            curve = first_pipe.Location.Curve
+            if not curve or not curve.IsBound:
+                print("Invalid location curve for first pipe {}".format(first_pipe.Id))
+                raise Exception("First pipe must have a valid location curve.")
+            first_endpoints = [curve.GetEndPoint(0), curve.GetEndPoint(1)]
+            ref_point = min(first_endpoints, key=lambda p: p.DistanceTo(XYZ(0, 0, 0)))
+            # print("Reference point (nearest endpoint of first pipe): X={:.2f}, Y={:.2f}, Z={:.2f}".format(ref_point.X, ref_point.Y, ref_point.Z))
+            
+            # Compute midpoints, diameters, and insulation for both pipes
             endpoints = []
             midpoints = []
             thicknesses = []
@@ -409,25 +419,21 @@ try:
                     print("Invalid location curve for pipe {}".format(pipe.Id))
                     raise Exception("Pipe must have a valid location curve.")
             
-            # Use the endpoint closest to the origin (0,0,0)
-            ref_point = min(endpoints, key=lambda p: p.DistanceTo(XYZ(0, 0, 0)))
-            print("Reference point: X={:.2f}, Y={:.2f}, Z={:.2f}".format(ref_point.X, ref_point.Y, ref_point.Z))
-            
             # Debug: Log pipe endpoints, midpoints, diameters, and insulation
-            for i, ep in enumerate(endpoints):
-                print("Pipe endpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, ep.X, ep.Y, ep.Z))
-            for i, mid in enumerate(midpoints):
-                print("Pipe midpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, mid.X, mid.Y, mid.Z))
-            for i, (diam, thick) in enumerate(zip(diameters, thicknesses)):
-                print("Pipe {} diameter: {:.2f}, insulation thickness: {:.2f}".format(i, diam, thick))
+            # for i, ep in enumerate(endpoints):
+                # print("Pipe endpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, ep.X, ep.Y, ep.Z))
+            # for i, mid in enumerate(midpoints):
+                # print("Pipe midpoint {}: X={:.2f}, Y={:.2f}, Z={:.2f}".format(i, mid.X, mid.Y, mid.Z))
+            # for i, (diam, thick) in enumerate(zip(diameters, thicknesses)):
+                # print("Pipe {} diameter: {:.2f}, insulation thickness: {:.2f}".format(i, diam, thick))
+            # print("Distance from end: {:.2f}, Spacing: {:.2f}".format(distancefromend, Spacing))
             
             # Recalculate direction and perpendicular vectors
-            curve = selected_elements[0].Location.Curve
             dir_vec = (curve.GetEndPoint(1) - curve.GetEndPoint(0)).Normalize()
             dir_vec = XYZ(dir_vec.X, dir_vec.Y, 0).Normalize()  # Ensure Z=0
             perp_vec = XYZ(-dir_vec.Y, dir_vec.X, 0).Normalize()  # Perpendicular in XY plane
-            print("Direction vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(dir_vec.X, dir_vec.Y, dir_vec.Z))
-            print("Perpendicular vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(perp_vec.X, perp_vec.Y, perp_vec.Z))
+            # print("Direction vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(dir_vec.X, dir_vec.Y, dir_vec.Z))
+            # print("Perpendicular vector: X={:.2f}, Y={:.2f}, Z={:.2f}".format(perp_vec.X, perp_vec.Y, perp_vec.Z))
             
             # Recalculate center_perp using projections onto perp_vec
             perp_projs = []
@@ -437,19 +443,19 @@ try:
                 perp_projs.append(proj - half_size)  # Min edge
                 perp_projs.append(proj + half_size)  # Max edge
             center_perp = (min(perp_projs) + max(perp_projs)) / 2
-            print("Perpendicular projections (adjusted for diameter/insulation): {}".format(["{:.2f}".format(float(p)) for p in perp_projs]))
-            print("Center perpendicular: {:.2f}".format(float(center_perp)))
+            # print("Perpendicular projections (adjusted for diameter/insulation): {}".format(["{:.2f}".format(float(p)) for p in perp_projs]))
+            # print("Center perpendicular: {:.2f}".format(float(center_perp)))
             
-            # Recalculate projections along the pipe direction
-            projs_along = [(p - ref_point).DotProduct(dir_vec) for p in endpoints]
+            # Recalculate projections along the pipe direction for first pipe
+            projs_along = [(p - ref_point).DotProduct(dir_vec) for p in first_endpoints]
             min_along = min(projs_along)
-            print("Min along projection: {:.2f}".format(float(min_along)))
+            # print("Min along projection (first pipe): {:.2f}".format(float(min_along)))
             
             # Set center_z to pipe elevation
             center_z = midpoints[0].Z  # Use pipe elevation
             if BOITrap:
                 center_z = PRTElevation
-            print("Center Z: {:.2f}, BOITrap: {}, PRTElevation: {:.2f}".format(center_z, BOITrap, PRTElevation))
+            # print("Center Z: {:.2f}, BOITrap: {}, PRTElevation: {:.2f}".format(center_z, BOITrap, PRTElevation))
             
             for idx, hanger in enumerate(hangers):
                 # Set dimensions first
@@ -473,15 +479,15 @@ try:
                 except Exception as e:
                     print("Error rotating hanger {}: {}".format(hanger.Id, str(e)))
                 
-                # Compute target position
+                # Compute target position starting from nearest endpoint
                 along = min_along + IncrementSpacing
                 pos = ref_point + dir_vec * along + perp_vec * center_perp + XYZ(0, 0, center_z)
                 IncrementSpacing += Spacing
-                print("Hanger {} target position: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, pos.X, pos.Y, pos.Z))
+                # print("Hanger {} target position: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, pos.X, pos.Y, pos.Z))
                 
                 # Move hanger
                 center = GetCenterPoint(hanger.Id)
-                print("Hanger {} current center: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, center.X, center.Y, center.Z))
+                # print("Hanger {} current center: X={:.2f}, Y={:.2f}, Z={:.2f}".format(hanger.Id, center.X, center.Y, center.Z))
                 translation = pos - center
                 try:
                     ElementTransformUtils.MoveElement(doc, hanger.Id, translation)
