@@ -1,0 +1,15 @@
+#highlight: new
+
+# bundle title
+title:
+  "Zoom To\n Element"
+
+# bundle tooltip
+tooltip: |-
+  Zooms to selected element in active view.
+
+# bundle help url
+help_url: "https://youtu.be/AvDcEcJ7OFk"
+
+# bundle author
+author: Mitchell Oatman

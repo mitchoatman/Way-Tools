@@ -1,9 +1,7 @@
 layout:
-  - BWG-Background
-  - Families
-  - Copy_VG_Filters
-  - Exports
-  - WorksetTools
+  - Views and Sheets
+  - SaveViews
+  - ZoomToElement
 
 
 background:
