@@ -1,12 +1,18 @@
 import Autodesk
-from Autodesk.Revit.DB import FilteredElementCollector, BoundingBoxXYZ, XYZ, BuiltInCategory, Transaction, ViewSheet, ViewDuplicateOption, Viewport, BuiltInParameter
-from Autodesk.Revit.UI.Selection import PickBoxStyle, ISelectionFilter, ObjectType
-from rpw.ui.forms import (FlexForm, Label, ComboBox, TextBox, TextBox, Separator, Button, CheckBox)
-from pyrevit import forms
+import clr
+clr.AddReference('PresentationFramework')
+clr.AddReference('PresentationCore')
+clr.AddReference('WindowsBase')
+clr.AddReference('System.Xaml')
+import System
+from System.Windows.Controls import Label, TextBox, Button, ScrollViewer, StackPanel, Grid, Orientation, CheckBox
+from System.Windows import Window, Thickness, SizeToContent, ResizeMode, HorizontalAlignment, VerticalAlignment, GridLength, GridUnitType
+from System.Windows.Media import Brushes, FontFamily
+from Autodesk.Revit.DB import FilteredElementCollector, BoundingBoxXYZ, XYZ, BuiltInCategory, Transaction, ViewSheet, Viewport
 from Autodesk.Revit.UI import TaskDialog
 import sys
 
-#define the active Revit application and document
+# Define the active Revit application and document
 DB = Autodesk.Revit.DB
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -16,33 +22,294 @@ app = doc.Application
 RevitVersion = app.VersionNumber
 RevitINT = float(RevitVersion)
 
-#>>>>>>>>>> GET SELECTED VIEWS
-selected_views = forms.select_views(use_selection=True)
-if not selected_views:
-    forms.alert("No views selected. Please try again.", exitscript=True)
+class ViewSelectionFilter(Window):
+    def __init__(self, views):
+        self.selected_views = []
+        self.view_list = sorted(views, key=lambda x: x.Name)
+        self.checkboxes = []
+        self.check_all_state = False
+        self.InitializeComponents()
 
-#>>>>>> SELECT TBLOCK
-selected_titleblocks = forms.select_titleblocks(title='Select Titleblock', button_name='Select', no_tb_option='No Title Block', width=500, multiple=False, filterfunc=None)
-if not selected_titleblocks:
+    def InitializeComponents(self):
+        self.Title = "Select Views"
+        self.Width = 400
+        self.Height = 400
+        self.MinWidth = self.Width
+        self.MinHeight = self.Height
+        self.ResizeMode = ResizeMode.CanResize
+        self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+
+        grid = Grid()
+        grid.Margin = Thickness(5)
+        for i in range(4):  # rows for: label, search box, scroll, buttons
+            row = GridLength(1, GridUnitType.Star) if i == 2 else GridLength.Auto
+            grid.RowDefinitions.Add(System.Windows.Controls.RowDefinition(Height=row))
+        grid.ColumnDefinitions.Add(System.Windows.Controls.ColumnDefinition())
+
+        # Row 0 - Label
+        self.label = Label(Content="Select views to create sheets:")
+        self.label.FontFamily = FontFamily("Arial")
+        self.label.FontSize = 16
+        self.label.Margin = Thickness(0)
+        Grid.SetRow(self.label, 0)
+        grid.Children.Add(self.label)
+
+        # Row 1 - Search Box
+        self.search_box = TextBox(Height=20, FontFamily=FontFamily("Arial"), FontSize=12)
+        self.search_box.TextChanged += self.search_changed
+        Grid.SetRow(self.search_box, 1)
+        grid.Children.Add(self.search_box)
+
+        # Row 2 - Scrollable Checkbox Panel
+        self.checkbox_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Vertical)
+        scroll_viewer = ScrollViewer(Content=self.checkbox_panel, VerticalScrollBarVisibility=System.Windows.Controls.ScrollBarVisibility.Auto)
+        scroll_viewer.Margin = Thickness(0, 1, 0, 1)
+        Grid.SetRow(scroll_viewer, 2)
+        grid.Children.Add(scroll_viewer)
+
+        self.update_checkboxes(self.view_list)
+
+        # Row 3 - Button Panel
+        button_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0, 10, 0, 10))
+
+        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 0, 20, 0))
+        self.select_button.Click += self.select_clicked
+        button_panel.Children.Add(self.select_button)
+
+        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12)
+        self.check_all_button.Click += self.check_all_clicked
+        button_panel.Children.Add(self.check_all_button)
+
+        Grid.SetRow(button_panel, 3)
+        grid.Children.Add(button_panel)
+
+        # Set window content
+        self.Content = grid
+        self.SizeChanged += self.on_resize
+
+    def update_checkboxes(self, views):
+        self.checkbox_panel.Children.Clear()
+        self.checkboxes = []
+        for view in views:
+            checkbox = CheckBox(Content=view.Name)
+            checkbox.Tag = view
+            checkbox.Click += self.checkbox_clicked
+            if view.Name in self.selected_views:
+                checkbox.IsChecked = True
+            self.checkbox_panel.Children.Add(checkbox)
+            self.checkboxes.append(checkbox)
+
+    def search_changed(self, sender, args):
+        search_text = self.search_box.Text.lower()
+        filtered = [v for v in self.view_list if search_text in v.Name.lower()]
+        self.update_checkboxes(filtered)
+
+    def check_all_clicked(self, sender, args):
+        self.check_all_state = not self.check_all_state
+        for cb in self.checkboxes:
+            cb.IsChecked = self.check_all_state
+        self.selected_views = [cb.Tag for cb in self.checkboxes if cb.IsChecked]
+
+    def checkbox_clicked(self, sender, args):
+        self.selected_views = [cb.Tag for cb in self.checkboxes if cb.IsChecked]
+
+    def select_clicked(self, sender, args):
+        self.selected_views = [cb.Tag for cb in self.checkboxes if cb.IsChecked]
+        self.DialogResult = True
+        self.Close()
+
+    def on_resize(self, sender, args):
+        pass
+
+class TitleblockSelectionFilter(Window):
+    def __init__(self, titleblocks):
+        self.selected_titleblock = None
+        self.titleblock_list = sorted(titleblocks, key=lambda x: x.get_Parameter(DB.BuiltInParameter.SYMBOL_NAME_PARAM).AsString())
+        self.checkboxes = []
+        self.check_all_state = False
+        self.InitializeComponents()
+
+    def InitializeComponents(self):
+        self.Title = "Select Titleblock"
+        self.Width = 400
+        self.Height = 400
+        self.MinWidth = self.Width
+        self.MinHeight = self.Height
+        self.ResizeMode = ResizeMode.CanResize
+        self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
+
+        grid = Grid()
+        grid.Margin = Thickness(5)
+        for i in range(4):  # rows for: label, search box, scroll, buttons
+            row = GridLength(1, GridUnitType.Star) if i == 2 else GridLength.Auto
+            grid.RowDefinitions.Add(System.Windows.Controls.RowDefinition(Height=row))
+        grid.ColumnDefinitions.Add(System.Windows.Controls.ColumnDefinition())
+
+        # Row 0 - Label
+        self.label = Label(Content="Select a titleblock:")
+        self.label.FontFamily = FontFamily("Arial")
+        self.label.FontSize = 16
+        self.label.Margin = Thickness(0)
+        Grid.SetRow(self.label, 0)
+        grid.Children.Add(self.label)
+
+        # Row 1 - Search Box
+        self.search_box = TextBox(Height=20, FontFamily=FontFamily("Arial"), FontSize=12)
+        self.search_box.TextChanged += self.search_changed
+        Grid.SetRow(self.search_box, 1)
+        grid.Children.Add(self.search_box)
+
+        # Row 2 - Scrollable Checkbox Panel
+        self.checkbox_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Vertical)
+        scroll_viewer = ScrollViewer(Content=self.checkbox_panel, VerticalScrollBarVisibility=System.Windows.Controls.ScrollBarVisibility.Auto)
+        scroll_viewer.Margin = Thickness(0, 1, 0, 1)
+        Grid.SetRow(scroll_viewer, 2)
+        grid.Children.Add(scroll_viewer)
+
+        self.update_checkboxes(self.titleblock_list)
+
+        # Row 3 - Button Panel
+        button_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0, 10, 0, 10))
+
+        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 0, 20, 0))
+        self.select_button.Click += self.select_clicked
+        button_panel.Children.Add(self.select_button)
+
+        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12)
+        self.check_all_button.Click += self.check_all_clicked
+        button_panel.Children.Add(self.check_all_button)
+
+        Grid.SetRow(button_panel, 3)
+        grid.Children.Add(button_panel)
+
+        # Set window content
+        self.Content = grid
+        self.SizeChanged += self.on_resize
+
+    def update_checkboxes(self, titleblocks):
+        self.checkbox_panel.Children.Clear()
+        self.checkboxes = []
+        for tb in titleblocks:
+            tb_name = tb.get_Parameter(DB.BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
+            checkbox = CheckBox(Content=tb_name)
+            checkbox.Tag = tb
+            checkbox.Click += self.checkbox_clicked
+            if self.selected_titleblock and tb_name == self.selected_titleblock.get_Parameter(DB.BuiltInParameter.SYMBOL_NAME_PARAM).AsString():
+                checkbox.IsChecked = True
+            self.checkbox_panel.Children.Add(checkbox)
+            self.checkboxes.append(checkbox)
+
+    def search_changed(self, sender, args):
+        search_text = self.search_box.Text.lower()
+        filtered = [tb for tb in self.titleblock_list if search_text in tb.get_Parameter(DB.BuiltInParameter.SYMBOL_NAME_PARAM).AsString().lower()]
+        self.update_checkboxes(filtered)
+
+    def check_all_clicked(self, sender, args):
+        self.check_all_state = not self.check_all_state
+        for cb in self.checkboxes:
+            cb.IsChecked = self.check_all_state
+        self.selected_titleblock = [cb.Tag for cb in self.checkboxes if cb.IsChecked][-1] if self.check_all_state else None
+
+    def checkbox_clicked(self, sender, args):
+        checked = [cb for cb in self.checkboxes if cb.IsChecked]
+        if checked:
+            self.selected_titleblock = checked[-1].Tag
+            for cb in self.checkboxes:
+                if cb != checked[-1]:
+                    cb.IsChecked = False
+
+    def select_clicked(self, sender, args):
+        checked = [cb for cb in self.checkboxes if cb.IsChecked]
+        if checked:
+            self.selected_titleblock = checked[-1].Tag
+        self.DialogResult = True
+        self.Close()
+
+    def on_resize(self, sender, args):
+        pass
+
+# Get all views
+all_views = fec(doc).OfClass(DB.View).ToElements()
+valid_views = [v for v in all_views if not v.IsTemplate and v.ViewType in [DB.ViewType.FloorPlan, DB.ViewType.CeilingPlan, DB.ViewType.Elevation, DB.ViewType.Section, DB.ViewType.ThreeD, DB.ViewType.DraftingView]]
+
+# Show view selection dialog
+view_form = ViewSelectionFilter(valid_views)
+if not view_form.ShowDialog() or not view_form.selected_views:
+    TaskDialog.Show("Error", "No views selected.")
+    sys.exit()
+selected_views = view_form.selected_views
+
+# Get all titleblocks
+titleblocks = fec(doc).OfCategory(BuiltInCategory.OST_TitleBlocks).WhereElementIsElementType().ToElements()
+
+# Show titleblock selection dialog
+tb_form = TitleblockSelectionFilter(titleblocks)
+if not tb_form.ShowDialog() or not tb_form.selected_titleblock:
     TaskDialog.Show("Error", "No title block selected.")
     sys.exit()
+selected_titleblock = tb_form.selected_titleblock
 
-#>>>>>> DEFINE SHEET NUMBER AND NAME
-# Set default sheet number text based on number of selected views
-default_sheet_number = 'Varies - Don\'t Change' if len(selected_views) > 1 else 'Sheet Number'
-components = [Label('Sheet Number:'),
-              TextBox('sheetnumber', default_sheet_number),
-              Label('Sheet Name:'),
-              TextBox('sheetname', 'Sheet Name'),
-              Button('Ok')]
-form = FlexForm('Title', components)
-form.show()
+# Define sheet number and name input dialog
+class SheetInputForm(Window):
+    def __init__(self):
+        self.sheet_number = ""
+        self.sheet_name = ""
+        self.InitializeComponents()
 
-if not form.values:
-    sys.exit()  # Exit if form is canceled
+    def InitializeComponents(self):
+        self.Title = "Sheet Information"
+        self.Width = 300
+        self.Height = 210
+        self.ResizeMode = ResizeMode.NoResize
+        self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
 
-snumber = form.values['sheetnumber']
-sname = form.values['sheetname']
+        grid = Grid()
+        grid.Margin = Thickness(10)
+        for i in range(5):
+            grid.RowDefinitions.Add(System.Windows.Controls.RowDefinition(Height=GridLength.Auto))
+        grid.ColumnDefinitions.Add(System.Windows.Controls.ColumnDefinition())
+
+        # Row 0 - Sheet Number Label
+        label1 = Label(Content="Sheet Number:", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 2, 0, 2))
+        Grid.SetRow(label1, 0)
+        grid.Children.Add(label1)
+
+        # Row 1 - Sheet Number Input
+        default_sheet_number = 'Varies - Don\'t Change' if len(selected_views) > 1 else 'Sheet Number'
+        self.sheet_number_input = TextBox(Text=default_sheet_number, FontFamily=FontFamily("Arial"), FontSize=12, Height=20, Width=200, Margin=Thickness(0, 2, 0, 2))
+        Grid.SetRow(self.sheet_number_input, 1)
+        grid.Children.Add(self.sheet_number_input)
+
+        # Row 2 - Sheet Name Label
+        label2 = Label(Content="Sheet Name:", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 2, 0, 2))
+        Grid.SetRow(label2, 2)
+        grid.Children.Add(label2)
+
+        # Row 3 - Sheet Name Input
+        self.sheet_name_input = TextBox(Text="Sheet Name", FontFamily=FontFamily("Arial"), FontSize=12, Height=20, Width=200, Margin=Thickness(0, 2, 0, 2))
+        Grid.SetRow(self.sheet_name_input, 3)
+        grid.Children.Add(self.sheet_name_input)
+
+        # Row 4 - Button
+        button = Button(Content="OK", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 10, 0, 0), Height=30, Width=60)
+        Grid.SetRow(button, 4)
+        grid.Children.Add(button)
+        button.Click += self.ok_clicked
+
+        self.Content = grid
+
+    def ok_clicked(self, sender, args):
+        self.sheet_number = self.sheet_number_input.Text
+        self.sheet_name = self.sheet_name_input.Text
+        self.DialogResult = True
+        self.Close()
+
+# Show sheet input dialog
+sheet_form = SheetInputForm()
+if not sheet_form.ShowDialog():
+    sys.exit()
+snumber = sheet_form.sheet_number
+sname = sheet_form.sheet_name
 
 # Check if sheet number already exists (only if single view and user provided a custom sheet number)
 if len(selected_views) == 1 and snumber != 'Varies - Don\'t Change':
@@ -59,11 +326,7 @@ for view in selected_views:
             TaskDialog.Show("Error", "View '{}' is already placed on another sheet.".format(view.Name))
             sys.exit()
 
-borders = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_TitleBlocks).WhereElementIsElementType()
-
-titleblockid = borders.FirstElementId()
-
-#define a transaction variable and describe the transaction
+# Define a transaction and describe the transaction
 t = Transaction(doc, 'Sheet From View')
 
 # Begin new transaction
@@ -80,7 +343,7 @@ for i, view in enumerate(selected_views):
         sys.exit()
     
     # Create new sheet
-    SHEET = ViewSheet.Create(doc, selected_titleblocks)
+    SHEET = ViewSheet.Create(doc, selected_titleblock.Id)
     SHEET.Name = sname
     SHEET.SheetNumber = current_sheet_number
     x = SHEET.Outline.Max.Add(SHEET.Outline.Min).Divide(2.0)[0]

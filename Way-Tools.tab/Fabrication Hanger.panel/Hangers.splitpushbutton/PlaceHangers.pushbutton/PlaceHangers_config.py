@@ -1,14 +1,14 @@
+import clr
+import os
 import Autodesk
 from Autodesk.Revit.DB import Transaction, FabricationConfiguration, BuiltInParameter, FabricationPart, FabricationServiceButton, FabricationService, XYZ, ConnectorType
 from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 import math
-import os
-import clr
-clr.AddReference("System.Windows.Forms")
-clr.AddReference("System.Drawing")
-clr.AddReference("System")
-from System.Windows.Forms import Form, Label, ComboBox, TextBox, CheckBox, Button, DialogResult, FormStartPosition, FormBorderStyle, ComboBoxStyle
-from System.Drawing import Point, Size, Font
+clr.AddReference("PresentationFramework")
+clr.AddReference("PresentationCore")
+clr.AddReference("WindowsBase")
+from System.Windows import Application, Window, Thickness, WindowStyle, ResizeMode, WindowStartupLocation, HorizontalAlignment
+from System.Windows.Controls import Label, TextBox, Button, Grid, RowDefinition, ComboBox, CheckBox
 from System import Array
 
 doc = __revit__.ActiveUIDocument.Document
@@ -74,7 +74,6 @@ def order_selected_elements(selected_elements, start_element, start_connector):
         else:
             break
     
-    # print("Ordered elements: {}".format([e.Id.IntegerValue for e in ordered_elements]))
     return ordered_elements
 
 # Function to determine if an element is vertical
@@ -116,26 +115,20 @@ def analyze_run(selected_elements, start_element, start_connector):
     segments = []
     current_position = 0
 
-    # Use the selected_elements as the ordered run
     ordered_run = selected_elements
-    # print("Ordered run includes elements: {}".format([e.Id.IntegerValue for e in ordered_run]))
 
-    # Collect segment info and calculate length
     for e in ordered_run:
         length = e.CenterlineLength
         is_pipe = e.LookupParameter('Part Pattern Number').AsInteger() in (2041, 866, 40)
         segments.append((e, current_position, length, is_pipe))
         total_run_length += length
         current_position += length
-        # print("Segment: Element ID {}, Start Pos {}, Length {}, Is Pipe {}".format(
-            # e.Id.IntegerValue, current_position - length, length, is_pipe))
         if e == ordered_run[-1]:
             connectors = e.ConnectorManager.Connectors
             for conn in connectors:
                 if conn.Origin.DistanceTo(start_point) > end_point.DistanceTo(start_point):
                     end_point = conn.Origin
 
-    # Analyze directions and angles
     for i, (e, start_pos, length, is_pipe) in enumerate(segments):
         if is_pipe:
             connectors = e.ConnectorManager.Connectors
@@ -167,92 +160,112 @@ def analyze_run(selected_elements, start_element, start_connector):
         'fitting_angles': fitting_angles
     }
 
-# Windows Forms dialog for hanger and spacing
-class HangerSpacingDialog(Form):
+# WPF Form for hanger and spacing
+class HangerSpacingDialog(Window):
     def __init__(self, button_names, lines):
-        self.Text = "Hanger and Spacing"
-        self.Size = Size(400, 355)
-        self.StartPosition = FormStartPosition.CenterScreen
-        self.FormBorderStyle = FormBorderStyle.FixedDialog
+        self.Title = "Hanger and Spacing"
+        self.Width = 400
+        self.Height = 450  # Increased height to accommodate additional row
+        self.WindowStyle = WindowStyle.SingleBorderWindow
+        self.ResizeMode = ResizeMode.NoResize
+        self.WindowStartupLocation = WindowStartupLocation.CenterScreen
+        self.result = None
+
+        grid = Grid()
+        grid.Margin = Thickness(5)
+        for _ in range(8):  # Increased to 8 rows to separate CheckBoxes
+            grid.RowDefinitions.Add(RowDefinition())
+
+        self.Content = grid
 
         # Choose Hanger Label
         label_hanger = Label()
-        label_hanger.Text = "Choose Hanger:"
-        label_hanger.Location = Point(10, 10)
-        label_hanger.AutoSize = True
-        label_hanger.Font = Font("Arial", 10)
-        self.Controls.Add(label_hanger)
+        label_hanger.Content = "Choose Hanger:"
+        label_hanger.FontSize = 12
+        label_hanger.Margin = Thickness(0, 0, 0, 2)  # Reduced bottom margin
+        Grid.SetRow(label_hanger, 0)
+        grid.Children.Add(label_hanger)
 
         # Hanger ComboBox
         self.combobox_hanger = ComboBox()
-        self.combobox_hanger.Location = Point(10, 36)
-        self.combobox_hanger.Size = Size(350, 20)
-        self.combobox_hanger.DropDownStyle = ComboBoxStyle.DropDownList
-        self.combobox_hanger.Items.AddRange(Array[object](button_names))
-        if lines[0] in button_names:
-            self.combobox_hanger.SelectedItem = lines[0]
-        else:
-            self.combobox_hanger.SelectedItem = button_names[0]
-        self.Controls.Add(self.combobox_hanger)
+        self.combobox_hanger.ItemsSource = Array[object](button_names)
+        self.combobox_hanger.SelectedItem = lines[0] if lines[0] in button_names else button_names[0]
+        self.combobox_hanger.Height = 25  # Set ComboBox height to ~15px
+        self.combobox_hanger.Margin = Thickness(0, -50, 0, 5)  # Reduced bottom margin
+        Grid.SetRow(self.combobox_hanger, 1)
+        grid.Children.Add(self.combobox_hanger)
 
         # Distance from End Label
         label_end_dist = Label()
-        label_end_dist.Text = "Distance from End (Ft):"
-        label_end_dist.Font = Font("Arial", 10)
-        label_end_dist.Location = Point(10, 70)
-        label_end_dist.AutoSize = True
-        self.Controls.Add(label_end_dist)
+        label_end_dist.Content = "Distance from End (Ft):"
+        label_end_dist.FontSize = 12
+        label_end_dist.Margin = Thickness(0, -25, 0, 2)  # Reduced bottom margin
+        Grid.SetRow(label_end_dist, 2)
+        grid.Children.Add(label_end_dist)
 
         # Distance from End TextBox
         self.textbox_end_dist = TextBox()
-        self.textbox_end_dist.Location = Point(10, 95)
-        self.textbox_end_dist.Size = Size(350, 20)
         self.textbox_end_dist.Text = lines[1]
-        self.Controls.Add(self.textbox_end_dist)
+        self.textbox_end_dist.Height = 25  # Set TextBox height to ~15px for consistency
+        self.textbox_end_dist.Margin = Thickness(0, -100, 0, 5)  # Reduced bottom margin
+        Grid.SetRow(self.textbox_end_dist, 3)
+        grid.Children.Add(self.textbox_end_dist)
 
         # Hanger Spacing Label
         label_spacing = Label()
-        label_spacing.Text = "Hanger Spacing (Ft):"
-        label_spacing.Font = Font("Arial", 10)
-        label_spacing.Location = Point(10, 130)
-        label_spacing.AutoSize = True
-        self.Controls.Add(label_spacing)
+        label_spacing.Content = "Hanger Spacing (Ft):"
+        label_spacing.FontSize = 12
+        label_spacing.Margin = Thickness(0, -50, 0, 2)  # Reduced bottom margin
+        Grid.SetRow(label_spacing, 4)
+        grid.Children.Add(label_spacing)
 
         # Hanger Spacing TextBox
         self.textbox_spacing = TextBox()
-        self.textbox_spacing.Location = Point(10, 155)
-        self.textbox_spacing.Size = Size(350, 20)
         self.textbox_spacing.Text = lines[2]
-        self.Controls.Add(self.textbox_spacing)
+        self.textbox_spacing.Height = 25  # Set TextBox height to ~15px for consistency
+        self.textbox_spacing.Margin = Thickness(0, -150, 0, 5)  # Reduced bottom margin
+        Grid.SetRow(self.textbox_spacing, 5)
+        grid.Children.Add(self.textbox_spacing)
 
         # Attach to Structure CheckBox
         self.checkbox_atos = CheckBox()
-        self.checkbox_atos.Text = "Attach to Structure"
-        self.checkbox_atos.Font = Font("Arial", 10)
-        self.checkbox_atos.Location = Point(10, 190)
-        self.checkbox_atos.AutoSize = True
-        self.checkbox_atos.Checked = True
-        self.Controls.Add(self.checkbox_atos)
+        self.checkbox_atos.Content = "Attach to Structure"
+        self.checkbox_atos.FontSize = 12
+        self.checkbox_atos.IsChecked = True
+        self.checkbox_atos.Margin = Thickness(0, -50, 0, 5)
+        Grid.SetRow(self.checkbox_atos, 6)
+        grid.Children.Add(self.checkbox_atos)
 
         # Support Joints CheckBox
         self.checkbox_support_joints = CheckBox()
-        self.checkbox_support_joints.Text = "Support Joints"
-        self.checkbox_support_joints.Font = Font("Arial", 10)
-        self.checkbox_support_joints.Location = Point(10, 225)
-        self.checkbox_support_joints.AutoSize = True
-        self.checkbox_support_joints.Checked = lines[3].lower() == 'true'
-        self.Controls.Add(self.checkbox_support_joints)
+        self.checkbox_support_joints.Content = "Support Joints"
+        self.checkbox_support_joints.FontSize = 12
+        self.checkbox_support_joints.IsChecked = lines[3].lower() == 'true'
+        self.checkbox_support_joints.Margin = Thickness(0, -50, 0, 5)
+        Grid.SetRow(self.checkbox_support_joints, 7)  # Moved to separate row
+        grid.Children.Add(self.checkbox_support_joints)
 
         # OK Button
         self.button_ok = Button()
-        self.button_ok.Text = "OK"
-        self.button_ok.Font = Font("Arial", 10)
-        self.button_ok.Location = Point((self.Width / 2) - 37, 270)
-        self.button_ok.Click += self.ok_button_clicked
-        self.Controls.Add(self.button_ok)
+        self.button_ok.Content = "OK"
+        self.button_ok.Width = 75
+        self.button_ok.FontSize = 12
+        self.button_ok.HorizontalAlignment = HorizontalAlignment.Center
+        self.button_ok.Margin = Thickness(0, 0, 0, 0)
+        Grid.SetRow(self.button_ok, 8)
+        grid.Children.Add(self.button_ok)
 
-    def ok_button_clicked(self, sender, event):
-        self.DialogResult = DialogResult.OK
+        self.combobox_hanger.Focus()
+
+    def on_ok(self, sender, args):
+        self.result = {
+            'Selectedbutton': self.combobox_hanger.SelectedItem,
+            'distancefromend': self.textbox_end_dist.Text,
+            'Spacing': self.textbox_spacing.Text,
+            'AtoS': self.checkbox_atos.IsChecked,
+            'SupportJoint': self.checkbox_support_joints.IsChecked
+        }
+        self.DialogResult = True
         self.Close()
 
 try:
@@ -333,14 +346,14 @@ try:
             lines = file.readlines()
             lines = [line.rstrip() for line in lines]
 
-    # Show the Windows Forms dialog
+    # Show the WPF dialog
     form = HangerSpacingDialog(buttonnames, lines)
-    if form.ShowDialog() == DialogResult.OK:
-        Selectedbutton = form.combobox_hanger.Text
-        distancefromend = float(form.textbox_end_dist.Text)
-        Spacing = float(form.textbox_spacing.Text)
-        AtoS = form.checkbox_atos.Checked
-        SupportJoint = form.checkbox_support_joints.Checked
+    if form.ShowDialog() and form.DialogResult:
+        Selectedbutton = form.result['Selectedbutton']
+        distancefromend = float(form.result['distancefromend'])
+        Spacing = float(form.result['Spacing'])
+        AtoS = form.result['AtoS']
+        SupportJoint = form.result['SupportJoint']
 
         # Write values to text file for future retrieval
         with open(filepath, 'w') as the_file:
@@ -671,4 +684,3 @@ try:
 
 except Exception as ex:
     pass
-    # print("Error: {}".format(str(ex)))

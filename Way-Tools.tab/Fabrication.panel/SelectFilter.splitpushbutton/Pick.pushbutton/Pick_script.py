@@ -19,29 +19,29 @@ from System.Windows import SizeToContent, ResizeMode, HorizontalAlignment, Verti
 
 # Categories to exclude
 CAT_EXCLUDED = (
-    int(DB.BuiltInCategory.OST_RoomSeparationLines),
-    int(DB.BuiltInCategory.OST_Cameras),
-    int(DB.BuiltInCategory.OST_CurtainGrids),
-    int(DB.BuiltInCategory.OST_Elev),
-    int(DB.BuiltInCategory.OST_IOSModelGroups),
-    int(DB.BuiltInCategory.OST_SitePropertyLineSegment),
-    int(DB.BuiltInCategory.OST_SectionBox),
-    int(DB.BuiltInCategory.OST_ShaftOpening),
-    int(DB.BuiltInCategory.OST_BeamAnalytical),
-    int(DB.BuiltInCategory.OST_StructuralFramingOpening),
-    int(DB.BuiltInCategory.OST_MEPSpaceSeparationLines),
-    int(DB.BuiltInCategory.OST_DuctSystem),
-    int(DB.BuiltInCategory.OST_PipingSystem),
-    int(DB.BuiltInCategory.OST_CenterLines),
-    int(DB.BuiltInCategory.OST_PipeCurvesCenterLine),
-    int(DB.BuiltInCategory.OST_FabricationPipeworkCenterLine),
-    int(DB.BuiltInCategory.OST_FabricationPipeworkDrop),
-    int(DB.BuiltInCategory.OST_FabricationPipeworkRise),
-    int(DB.BuiltInCategory.OST_FabricationPipeworkInsulation),
-    int(DB.BuiltInCategory.OST_CurtainGridsRoof),
-    int(DB.BuiltInCategory.OST_SWallRectOpening),
-    -2000278,
-    -1,
+    ElementId(DB.BuiltInCategory.OST_RoomSeparationLines),
+    ElementId(DB.BuiltInCategory.OST_Cameras),
+    ElementId(DB.BuiltInCategory.OST_CurtainGrids),
+    ElementId(DB.BuiltInCategory.OST_Elev),
+    ElementId(DB.BuiltInCategory.OST_IOSModelGroups),
+    ElementId(DB.BuiltInCategory.OST_SitePropertyLineSegment),
+    ElementId(DB.BuiltInCategory.OST_SectionBox),
+    ElementId(DB.BuiltInCategory.OST_ShaftOpening),
+    ElementId(DB.BuiltInCategory.OST_BeamAnalytical),
+    ElementId(DB.BuiltInCategory.OST_StructuralFramingOpening),
+    ElementId(DB.BuiltInCategory.OST_MEPSpaceSeparationLines),
+    ElementId(DB.BuiltInCategory.OST_DuctSystem),
+    ElementId(DB.BuiltInCategory.OST_PipingSystem),
+    ElementId(DB.BuiltInCategory.OST_CenterLines),
+    ElementId(DB.BuiltInCategory.OST_PipeCurvesCenterLine),
+    ElementId(DB.BuiltInCategory.OST_FabricationPipeworkCenterLine),
+    ElementId(DB.BuiltInCategory.OST_FabricationPipeworkDrop),
+    ElementId(DB.BuiltInCategory.OST_FabricationPipeworkRise),
+    ElementId(DB.BuiltInCategory.OST_FabricationPipeworkInsulation),
+    ElementId(DB.BuiltInCategory.OST_CurtainGridsRoof),
+    ElementId(DB.BuiltInCategory.OST_SWallRectOpening),
+    ElementId(System.Int64(-2000278)),  # Explicitly cast to Int64
+    ElementId(System.Int64(-1)),        # Explicitly cast to Int64
 )
 
 CategoryOption = namedtuple('CategoryOption', ['name', 'revit_cat'])
@@ -65,7 +65,7 @@ def get_categories_in_active_view(doc, view):
     category_dict = {}
     for element in elements:
         if (element.Category and element.Category.Name and 
-            element.Category.Id.IntegerValue not in CAT_EXCLUDED and 
+            element.Category.Id not in CAT_EXCLUDED and 
             element.Category.Id not in category_ids):
             category_ids.add(element.Category.Id)
             category_dict[element.Category.Id] = element.Category
@@ -92,7 +92,7 @@ class FilterSelectionByCategory(Window):
         self.Height = 400
         self.MinWidth = self.Width
         self.MinHeight = self.Height
-        self.ResizeMode = ResizeMode.CanResize
+        self.ResizeMode = ResizeMode.NoResize
         self.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen
 
         grid = Grid()
@@ -128,11 +128,11 @@ class FilterSelectionByCategory(Window):
         # Row 3 - Button Panel
         button_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0, 10, 0, 10))
 
-        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Margin=Thickness(0, 0, 20, 0))
+        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Height=25, Margin=Thickness(0, 0, 20, 0))
         self.select_button.Click += self.select_clicked
         button_panel.Children.Add(self.select_button)
 
-        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12)
+        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12, Height=25)
         self.check_all_button.Click += self.check_all_clicked
         button_panel.Children.Add(self.check_all_button)
 

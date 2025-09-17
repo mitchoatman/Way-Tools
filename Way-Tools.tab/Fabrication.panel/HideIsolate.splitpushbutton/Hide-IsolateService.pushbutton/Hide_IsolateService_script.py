@@ -53,7 +53,7 @@ class ServiceSelectionForm(object):
         self._window.Height = 400
         self._window.MinWidth = self._window.Width
         self._window.MinHeight = self._window.Height
-        self._window.ResizeMode = ResizeMode.CanResize
+        self._window.ResizeMode = ResizeMode.NoResize
         self._window.WindowStartupLocation = WindowStartupLocation.CenterScreen
 
         grid = Grid()
@@ -110,12 +110,13 @@ class ServiceSelectionForm(object):
         button_panel.VerticalAlignment = VerticalAlignment.Bottom
         button_panel.Margin = Thickness(0, 10, 0, 10)
 
-# Buttons
+        # Buttons
         self.reset_button = Button()
         self.reset_button.Content = "Reset View"
         self.reset_button.Background = Brushes.Red
         self.reset_button.FontFamily = FontFamily("Arial")
         self.reset_button.FontSize = 12
+        self.reset_button.Height = 25
         self.reset_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
         self.reset_button.Click += self.reset_clicked
         button_panel.Children.Add(self.reset_button)
@@ -124,6 +125,7 @@ class ServiceSelectionForm(object):
         self.hide_button.Content = "Hide"
         self.hide_button.FontFamily = FontFamily("Arial")
         self.hide_button.FontSize = 12
+        self.hide_button.Height = 25
         self.hide_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
         self.hide_button.Click += self.hide_clicked
         button_panel.Children.Add(self.hide_button)
@@ -132,14 +134,16 @@ class ServiceSelectionForm(object):
         self.isolate_button.Content = "Isolate"
         self.isolate_button.FontFamily = FontFamily("Arial")
         self.isolate_button.FontSize = 12
+        self.isolate_button.Height = 25
         self.isolate_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
         self.isolate_button.Click += self.isolate_clicked
         button_panel.Children.Add(self.isolate_button)
 
         self.check_all_button = Button()
-        self.check_all_button.Content = "Check All"
+        self.check_all_button.Content = "All / None"
         self.check_all_button.FontFamily = FontFamily("Arial")
         self.check_all_button.FontSize = 12
+        self.check_all_button.Height = 25
         self.check_all_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
         self.check_all_button.Click += self.check_all_clicked
         button_panel.Children.Add(self.check_all_button)
