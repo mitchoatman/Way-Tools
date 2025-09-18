@@ -233,6 +233,7 @@ class MultiPropertyFilterForm(Window):
         self.add_button.Height = 25
         self.add_button.Margin = Thickness(10, 20, 10, 0)
         self.add_button.Visibility = Visibility.Visible
+        self.add_button.ToolTip = "You can also double click on properties"
         self.add_button.HorizontalAlignment = HorizontalAlignment.Right
         self.add_button.Click += self.add_filter
         Grid.SetRow(self.add_button, 2)
@@ -267,10 +268,9 @@ class MultiPropertyFilterForm(Window):
         self.reset_filter_button.Content = "Update Data"
         self.reset_filter_button.Width = 80
         self.reset_filter_button.Height = 25
-        self.reset_filter_button.Foreground = Brushes.Black
-        self.reset_filter_button.Background = Brushes.PaleTurquoise
         self.reset_filter_button.Margin = Thickness(0, 0, 5, 0)
         self.reset_filter_button.Visibility = Visibility.Visible
+        self.reset_filter_button.ToolTip = "Refreshes filter data based on current view content"
         self.reset_filter_button.Click += self.reset_filter_clicked
         button_panel.Children.Add(self.reset_filter_button)
 
