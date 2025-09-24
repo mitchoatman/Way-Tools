@@ -1,54 +1,80 @@
-
-from Autodesk.Revit import DB
-from Autodesk.Revit.DB import *
-from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
-from pyrevit import revit, DB
-from pyrevit import forms
-from pyrevit import script
-from pyrevit import revit
+import clr
+clr.AddReference('System.Windows.Forms')
+import System
+from System.Windows.Forms import MessageBox
+from Autodesk.Revit.DB import (
+    FilteredElementCollector, BuiltInCategory, BuiltInParameter, ElementId,
+    FabricationPart
+)
+from Autodesk.Revit.UI.Selection import ObjectType
 import sys
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
-#path=os.path.dirname(os.path.abspath(__file__))
+app = doc.Application
 
+# Get selected elements or prompt for selection
+selected_ids = uidoc.Selection.GetElementIds()
+if not selected_ids:
+    try:
+        picked_refs = uidoc.Selection.PickObjects(ObjectType.Element, "Please select fabrication pipework elements.")
+        selected_ids = [ref.ElementId for ref in picked_refs]
+    except:
+        MessageBox.Show("Selection cancelled. No elements selected.", "Error")
+        sys.exit()
 
-#Element
-#PointOnElement
-#Edge
-#Face
-#LinkedElement
-
-#this is start of select element(s)
-class CustomISelectionFilter(ISelectionFilter):
-    def __init__(self, nom_categorie):
-        self.nom_categorie = nom_categorie
-    def AllowElement(self, e):
-        if e.Category.Name == self.nom_categorie:
-            return True
-        else:
-            return False
-    def AllowReference(self, ref, point):
-        return true
-try:
-    pipesel = uidoc.Selection.PickObjects(ObjectType.Element,
-    CustomISelectionFilter("MEP Fabrication Pipework"), "Select Fabrication Pipes to collect length from")            
-    Fpipework = [doc.GetElement( elId ) for elId in pipesel]
-    #this is end of select element(s)
-
-    if len(Fpipework) > 0:
-
-        # Iterate over fabrication pipes and collect length data
-        Total_Length = 0.0
-
-        for pipe in Fpipework:
-            if pipe.IsAStraight:
-                len_param = pipe.Parameter[BuiltInParameter.FABRICATION_PART_LENGTH]
-                if len_param:
-                    Total_Length = Total_Length + len_param.AsDouble()
-        # now that results are collected, print the total
-        print("Linear feet of selected pipe(s) is: {}".format(Total_Length))
-    else:
-        forms.alert('At least one fabrication pipe must be selected.')
-except:
+if not selected_ids:
+    MessageBox.Show("No elements selected. Please select elements and try again.", "Error")
     sys.exit()
+
+# Collect MEP Fabrication Pipework elements with CID 2041 from selected IDs
+selected_id_set = set(str(id.IntegerValue) for id in selected_ids)  # Convert to set of string IDs for comparison
+collector = (
+    FilteredElementCollector(doc)
+    .OfCategory(BuiltInCategory.OST_FabricationPipework)
+    .WhereElementIsNotElementType()
+)
+
+Fpipework = [
+    elem for elem in collector
+    if isinstance(elem, FabricationPart) and elem.ItemCustomId == 2041 and str(elem.Id.IntegerValue) in selected_id_set
+]
+
+if not Fpipework:
+    print "No fabrication pipes with CID 2041 selected."
+    sys.exit()
+
+# Process fabrication pipes
+Total_Length = 0.0
+straight_pipes = 0
+type_cache = {}  # Cache element types
+
+for pipe in Fpipework:
+    try:
+        # Get element type from cache or document
+        type_id = pipe.GetTypeId().IntegerValue
+        if type_id not in type_cache:
+            type_cache[type_id] = doc.GetElement(pipe.GetTypeId())
+        elem_type = type_cache[type_id]
+        family_name = elem_type.FamilyName if elem_type else "Unknown"
+
+        # Check if the pipe is straight and has a valid length
+        if getattr(pipe, "IsAStraight", False):
+            len_param = pipe.Parameter[BuiltInParameter.FABRICATION_PART_LENGTH]
+            if len_param and len_param.HasValue:
+                Total_Length += len_param.AsDouble()
+                straight_pipes += 1
+            else:
+                print "Warning: Pipe ID {} has no valid length parameter (Family: {}, CID: {})".format(
+                    pipe.Id, family_name, pipe.ItemCustomId)
+        else:
+            print "Skipped Element - ID: {}, Family: {}, CID: {}, IsAStraight: {}, Reason: Not straight".format(
+                pipe.Id, family_name, pipe.ItemCustomId, 
+                getattr(pipe, "IsAStraight", "N/A")
+            )
+    except Exception as e:
+        print "Error processing Element ID {}: {}".format(pipe.Id, str(e))
+
+# Output results
+print "Total straight pipes processed (CID 2041): {}".format(straight_pipes)
+print "Linear feet of selected straight pipe(s): {:.2f}".format(Total_Length)

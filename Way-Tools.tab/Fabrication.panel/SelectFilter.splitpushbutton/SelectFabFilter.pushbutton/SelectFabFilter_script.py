@@ -37,7 +37,7 @@ class RemoveFilterDialog(Window):
     def InitializeComponents(self):
         self.Title = "Remove Filter"
         self.Width = 300
-        self.Height = 150
+        self.Height = 140
         self.WindowStyle = WindowStyle.SingleBorderWindow
         self.ResizeMode = 0  # CanMinimize
         self.WindowStartupLocation = WindowStartupLocation.CenterScreen
@@ -47,16 +47,25 @@ class RemoveFilterDialog(Window):
         grid = Grid()
         self.Content = grid
 
+        # Define rows
+        row_definitions = [
+            RowDefinition(Height=GridLength.Auto),  # Label and ComboBox
+            RowDefinition(Height=GridLength.Auto)   # Buttons
+        ]
+        for row in row_definitions:
+            grid.RowDefinitions.Add(row)
+
         # Label
         self.label = Label()
         self.label.Content = "Select filter to remove:"
-        self.label.Margin = Thickness(10, 10, 0, 0)
+        self.label.Margin = Thickness(10, 5, 0, 0)
         self.label.Visibility = Visibility.Visible
+        Grid.SetRow(self.label, 0)
         grid.Children.Add(self.label)
 
         # ComboBox
         self.filter_combo = ComboBox()
-        self.filter_combo.Margin = Thickness(10, -20, 0, 0)
+        self.filter_combo.Margin = Thickness(10, 30, 10, 0)
         self.filter_combo.Width = 260
         self.filter_combo.Height = 20
         self.filter_combo.IsDropDownOpen = False
@@ -65,31 +74,55 @@ class RemoveFilterDialog(Window):
             self.filter_combo.Items.Add(option)
         if self.filter_options:
             self.filter_combo.SelectedIndex = 0
+        Grid.SetRow(self.filter_combo, 0)
         grid.Children.Add(self.filter_combo)
 
-        # OK Button
+        # Button panel for Remove, Remove All, and Cancel buttons
+        button_panel = StackPanel()
+        button_panel.Orientation = Orientation.Horizontal
+        button_panel.HorizontalAlignment = HorizontalAlignment.Center
+        button_panel.Margin = Thickness(0, 10, 0, 10)  # Reduced top margin for tighter spacing
+        Grid.SetRow(button_panel, 1)
+        grid.Children.Add(button_panel)
+
+        # Remove Button
         self.ok_button = Button()
         self.ok_button.Content = "Remove"
-        self.ok_button.Margin = Thickness(20, 70, 0, 0)
         self.ok_button.Width = 80
         self.ok_button.Height = 25
+        self.ok_button.Margin = Thickness(0, 0, 5, 0)
         self.ok_button.Visibility = Visibility.Visible
         self.ok_button.Click += self.ok_clicked
-        grid.Children.Add(self.ok_button)
+        button_panel.Children.Add(self.ok_button)
+
+        # Remove All Button
+        self.remove_all_button = Button()
+        self.remove_all_button.Content = "Remove All"
+        self.remove_all_button.Width = 80
+        self.remove_all_button.Height = 25
+        self.remove_all_button.Margin = Thickness(5, 0, 5, 0)
+        self.remove_all_button.Visibility = Visibility.Visible
+        self.remove_all_button.Click += self.remove_all_clicked
+        button_panel.Children.Add(self.remove_all_button)
 
         # Cancel Button
         self.cancel_button = Button()
         self.cancel_button.Content = "Cancel"
-        self.cancel_button.Margin = Thickness(190, 70, 0, 0)
         self.cancel_button.Width = 80
         self.cancel_button.Height = 25
+        self.cancel_button.Margin = Thickness(5, 0, 0, 0)
         self.cancel_button.Visibility = Visibility.Visible
         self.cancel_button.Click += self.cancel_clicked
-        grid.Children.Add(self.cancel_button)
+        button_panel.Children.Add(self.cancel_button)
 
     def ok_clicked(self, sender, args):
         if self.filter_combo.SelectedIndex >= 0:
             self.selected_filter = self.filter_keys[self.filter_combo.SelectedIndex]
+        self.DialogResult = True
+        self.Close()
+
+    def remove_all_clicked(self, sender, args):
+        self.selected_filter = None  # Special value to indicate remove all
         self.DialogResult = True
         self.Close()
 
@@ -162,7 +195,7 @@ class MultiPropertyFilterForm(Window):
         self.property_combo.IsDropDownOpen = False
         self.property_combo.Visibility = Visibility.Visible
         self.property_combo.HorizontalAlignment = HorizontalAlignment.Left
-        properties = list(self.property_options.keys())
+        properties = sorted(self.property_options.keys())  # Sort properties alphabetically
         for prop in properties:
             self.property_combo.Items.Add(prop)
         self.property_combo.SelectionChanged += self.property_changed
@@ -205,8 +238,8 @@ class MultiPropertyFilterForm(Window):
 
         # Values list label
         self.values_label = Label()
-        self.values_label.Content = "Select Values \nDouble Click to add properties to filter:"
-        self.values_label.Margin = Thickness(10, 0, 10, 0)
+        self.values_label.Content = "Select Values:"
+        self.values_label.Margin = Thickness(10, 25, 10, 0)
         self.values_label.Visibility = Visibility.Visible
         self.values_label.HorizontalAlignment = HorizontalAlignment.Left
         Grid.SetRow(self.values_label, 2)
@@ -321,9 +354,9 @@ class MultiPropertyFilterForm(Window):
 
     def reset_filter_clicked(self, sender, args):
         try:
-            # Clear existing filters
-            self.selected_filters = {}
-            self.update_filter_display()
+            # # Clear existing filters
+            # self.selected_filters = {}
+            # self.update_filter_display()
             
             # Refresh elements based on current view
             preselection = [doc.GetElement(id) for id in uidoc.Selection.GetElementIds()]
@@ -340,55 +373,35 @@ class MultiPropertyFilterForm(Window):
             for prop in ['CID', 'ServiceType', 'Service Name', 'Service Abbreviation', 'Size',
                         'STRATUS Assembly', 'Line Number', 'STRATUS Status', 'Reference Level',
                         'Item Number', 'Bundle Number', 'REF BS Designation', 'REF Line Number',
-                        'Specification', 'Hanger Rod Size', 'Valve Number']:
-                param_name = get_parameter_id(prop)
-                if param_name and self.fab_elements:
-                    param = doc.GetElement(self.fab_elements[0].GetTypeId()).LookupParameter(param_name) if self.fab_elements else None
-                    if param and param.StorageType == DB.StorageType.String:
-                        provider = ParameterValueProvider(param.Id)
-                        rule = FilterStringRule(provider, FilterStringContains(), "", False)
-                        param_filter = ElementParameterFilter(rule)
-                        filtered_elements = FilteredElementCollector(doc, curview.Id) \
-                            .OfClass(DB.FabricationPart) \
-                            .WherePasses(param_filter) \
-                            .WhereElementIsNotElementType() \
-                            .ToElements()
-                        values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in filtered_elements]))
-                    else:
-                        values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in self.fab_elements]))
-                    if values:
-                        self.property_options[prop] = sorted(values)
+                        'Specification', 'Hanger Rod Size', 'Valve Number', 'Beam Hanger']:
+                values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in self.fab_elements]))
+                if values:
+                    self.property_options[prop] = sorted(values)
 
             for prop in ['Name', 'Comments', 'Category']:
-                param_name = get_parameter_id(prop)
-                if param_name and self.all_elements:
-                    param = doc.GetElement(self.all_elements[0].GetTypeId()).LookupParameter(param_name) if self.all_elements else None
-                    if param and param.StorageType == DB.StorageType.String:
-                        provider = ParameterValueProvider(param.Id)
-                        rule = FilterStringRule(provider, FilterStringContains(), "", False)
-                        param_filter = ElementParameterFilter(rule)
-                        filtered_elements = FilteredElementCollector(doc, curview.Id) \
-                            .WhereElementIsNotElementType() \
-                            .WherePasses(param_filter) \
-                            .ToElements()
-                        values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in filtered_elements]))
-                    else:
-                        values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in self.all_elements]))
+                if self.all_elements:
+                    values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in self.all_elements]))
                     if values:
                         self.property_options[prop] = sorted(values)
 
             # Update ComboBox
             self.property_combo.Items.Clear()
-            properties = list(self.property_options.keys())
+            properties = sorted(self.property_options.keys())  # Sort properties alphabetically
             for prop in properties:
                 self.property_combo.Items.Add(prop)
             if properties:
                 self.property_combo.SelectedIndex = 0
-                self.property_changed(None, None)
+                # Explicitly refresh the values list for the selected property
+                self.property_combo.SelectedItem = properties[0]
+                self.values_list.Items.Clear()
+                self.search_box.Text = ""
+                values = self.property_options.get(properties[0], [])
+                if values:
+                    for value in values:
+                        self.values_list.Items.Add(value)
             
-            # Clear search box and values list
+            # Clear search box
             self.search_box.Text = ""
-            self.values_list.Items.Clear()
             
         except Exception as e:
             dialog = TaskDialog("Error")
@@ -433,11 +446,7 @@ class MultiPropertyFilterForm(Window):
 
     def remove_filter(self, sender, args):
         if not self.selected_filters:
-            dialog = TaskDialog("Information")
-            dialog.MainInstruction = "No filters to remove."
-            dialog.CommonButtons = TaskDialogCommonButtons.Ok
-            dialog.Show()
-            return
+            return  # Do nothing if no filters exist
         
         filter_options = []
         filter_keys = []
@@ -456,14 +465,18 @@ class MultiPropertyFilterForm(Window):
             return
         
         dialog = RemoveFilterDialog(filter_options, filter_keys)
-        if dialog.ShowDialog() == True and dialog.selected_filter:
-            prop, values = dialog.selected_filter
-            for i, (v, is_and) in enumerate(self.selected_filters[prop]):
-                if v == values:
-                    del self.selected_filters[prop][i]
-                    break
-            if not self.selected_filters[prop]:
-                del self.selected_filters[prop]
+        if dialog.ShowDialog() == True:
+            if dialog.selected_filter is None:
+                # Remove all filters
+                self.selected_filters = {}
+            elif dialog.selected_filter:
+                prop, values = dialog.selected_filter
+                for i, (v, is_and) in enumerate(self.selected_filters[prop]):
+                    if v == values:
+                        del self.selected_filters[prop][i]
+                        break
+                if not self.selected_filters[prop]:
+                    del self.selected_filters[prop]
             self.update_filter_display()
 
     def update_filter_display(self, sender=None, args=None):
@@ -516,7 +529,7 @@ class MultiPropertyFilterForm(Window):
                     elem_value = elem_values[prop]
                     prop_matches = []
                     for values, is_and in filter_list:
-                        prop_matches.append((elem_value in values, is_and))
+                        prop_matches.append((str(elem_value) in [str(v) for v in values], is_and))
                     and_matches_prop = [m for m, is_and in prop_matches if is_and]
                     or_matches_prop = [m for m, is_and in prop_matches if not is_and]
                     prop_result = (not and_matches_prop or all(and_matches_prop)) and \
@@ -565,7 +578,7 @@ class MultiPropertyFilterForm(Window):
                     elem_value = elem_values[prop]
                     prop_matches = []
                     for values, is_and in filter_list:
-                        prop_matches.append((elem_value in values, is_and))
+                        prop_matches.append((str(elem_value) in [str(v) for v in values], is_and))
                     and_matches_prop = [m for m, is_and in prop_matches if is_and]
                     or_matches_prop = [m for m, is_and in prop_matches if not is_and]
                     prop_result = (not and_matches_prop or all(and_matches_prop)) and \
@@ -596,9 +609,9 @@ def get_property_value(elem, property_name, debug=False):
     if elem is None or not elem.IsValidObject:
         return None
     property_map = {
-        'CID': lambda x: x.ItemCustomId,
+        'CID': lambda x: str(x.ItemCustomId) if x.ItemCustomId else None,
         'ServiceType': lambda x: Config.GetServiceTypeName(x.ServiceType) if x.ServiceType else None,
-        'Name': lambda x: get_parameter_value_by_name_AsValueString(x, 'Family'),
+        'Name': lambda x: get_parameter_value_by_name_AsValueString(x, 'Family') or x.get_Parameter(DB.BuiltInParameter.ELEM_FAMILY_PARAM).AsValueString() if x.get_Parameter(DB.BuiltInParameter.ELEM_FAMILY_PARAM) else None,
         'Service Name': lambda x: get_parameter_value_by_name_AsString(x, 'Fabrication Service Name'),
         'Service Abbreviation': lambda x: get_parameter_value_by_name_AsString(x, 'Fabrication Service Abbreviation'),
         'Size': lambda x: get_parameter_value_by_name_AsString(x, 'Size of Primary End'),
@@ -614,6 +627,7 @@ def get_property_value(elem, property_name, debug=False):
         'Specification': lambda x: Config.GetSpecificationName(x.Specification) if x.Specification else None,
         'Hanger Rod Size': lambda x: get_parameter_value_by_name_AsValueString(x, 'FP_Rod Size'),
         'Valve Number': lambda x: get_parameter_value_by_name_AsString(x, 'FP_Valve Number'),
+        'Beam Hanger': lambda x: get_parameter_value_by_name_AsString(x, 'FP_Beam Hanger'),
         'Category': lambda x: x.Category.Name if x.Category else None,
     }
     try:
@@ -638,6 +652,8 @@ def get_parameter_id(property_name):
         'Comments': 'Comments',
         'Hanger Rod Size': 'FP_Rod Size',
         'Valve Number': 'FP_Valve Number',
+        'Beam Hanger': 'FP_Beam Hanger',
+        'Name': 'Family',
     }
     return param_map.get(property_name)
 
@@ -659,46 +675,20 @@ if not fab_elements:
     import sys
     sys.exit()
 
-# Build property options with pre-filtering for string parameters
+# Build property options for fabrication parts
 property_options = {}
 for prop in ['CID', 'ServiceType', 'Service Name', 'Service Abbreviation', 'Size',
              'STRATUS Assembly', 'Line Number', 'STRATUS Status', 'Reference Level',
              'Item Number', 'Bundle Number', 'REF BS Designation', 'REF Line Number',
-             'Specification', 'Hanger Rod Size', 'Valve Number']:
-    param_name = get_parameter_id(prop)
-    if param_name and fab_elements:
-        # Use ElementParameterFilter for string parameters
-        param = doc.GetElement(fab_elements[0].GetTypeId()).LookupParameter(param_name) if fab_elements else None
-        if param and param.StorageType == DB.StorageType.String:
-            provider = ParameterValueProvider(param.Id)
-            rule = FilterStringRule(provider, FilterStringContains(), "", False)
-            param_filter = ElementParameterFilter(rule)
-            filtered_elements = FilteredElementCollector(doc, curview.Id) \
-                .OfClass(DB.FabricationPart) \
-                .WherePasses(param_filter) \
-                .WhereElementIsNotElementType() \
-                .ToElements()
-            values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in filtered_elements]))
-        else:
-            values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in fab_elements]))
-        if values:
-            property_options[prop] = sorted(values)
+             'Specification', 'Hanger Rod Size', 'Valve Number', 'Beam Hanger']:
+    values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in fab_elements]))
+    if values:
+        property_options[prop] = sorted(values)
 
+# Build property options for all elements
 for prop in ['Name', 'Comments', 'Category']:
-    param_name = get_parameter_id(prop)
-    if param_name and all_elements:
-        param = doc.GetElement(all_elements[0].GetTypeId()).LookupParameter(param_name) if all_elements else None
-        if param and param.StorageType == DB.StorageType.String:
-            provider = ParameterValueProvider(param.Id)
-            rule = FilterStringRule(provider, FilterStringContains(), "", False)
-            param_filter = ElementParameterFilter(rule)
-            filtered_elements = FilteredElementCollector(doc, curview.Id) \
-                .WhereElementIsNotElementType() \
-                .WherePasses(param_filter) \
-                .ToElements()
-            values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in filtered_elements]))
-        else:
-            values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in all_elements]))
+    if all_elements:
+        values = set(filter(None, [get_property_value(elem, prop, debug=False) for elem in all_elements]))
         if values:
             property_options[prop] = sorted(values)
 
