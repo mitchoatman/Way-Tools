@@ -1,3 +1,4 @@
+import Autodesk
 from collections import namedtuple
 from System.Collections.Generic import List
 from Autodesk.Revit import DB
@@ -72,8 +73,18 @@ def get_categories_in_active_view(doc, view):
     return sorted(category_dict.values(), key=lambda x: x.Name)
 
 def pick_by_categories(category_opts, uidoc):
+    if not category_opts:
+        return
+
     msfilter = PickByCategorySelectionFilter(category_opts)
-    selection_list = uidoc.Selection.PickElementsByRectangle(msfilter)
+    
+    try:
+        selection_list = uidoc.Selection.PickElementsByRectangle(msfilter)
+    except Autodesk.Revit.Exceptions.OperationCanceledException:
+        return
+    except Exception as ex:
+        return
+
     if selection_list:
         filtered_ids = List[ElementId]([e.Id for e in selection_list])
         uidoc.Selection.SetElementIds(filtered_ids)
@@ -128,11 +139,11 @@ class FilterSelectionByCategory(Window):
         # Row 3 - Button Panel
         button_panel = StackPanel(Orientation=System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center, Margin=Thickness(0, 10, 0, 10))
 
-        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Height=25, Margin=Thickness(0, 0, 20, 0))
+        self.select_button = Button(Content="Select", FontFamily=FontFamily("Arial"), FontSize=12, Height=25, Margin=Thickness(0, 0, 20, 0), Width=50)
         self.select_button.Click += self.select_clicked
         button_panel.Children.Add(self.select_button)
 
-        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12, Height=25)
+        self.check_all_button = Button(Content="Check All", FontFamily=FontFamily("Arial"), FontSize=12, Height=25, Width=70)
         self.check_all_button.Click += self.check_all_clicked
         button_panel.Children.Add(self.check_all_button)
 

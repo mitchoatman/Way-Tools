@@ -52,6 +52,7 @@ class SleeveForm(Window):
         ok_button = Button()
         ok_button.Content = "OK"
         ok_button.Width = 75
+        ok_button.Height = 25
         ok_button.HorizontalAlignment = HorizontalAlignment.Center
         ok_button.Click += self.ok_clicked
         Grid.SetRow(ok_button, 2)

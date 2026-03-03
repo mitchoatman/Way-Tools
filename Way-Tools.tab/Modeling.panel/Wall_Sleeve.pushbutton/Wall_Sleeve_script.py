@@ -17,6 +17,8 @@ import re
 from math import atan2, degrees
 from fractions import Fraction
 import os
+from Parameters.Add_SharedParameters import Shared_Params
+Shared_Params()
 
 # Get file path information
 path, filename = os.path.split(__file__)
@@ -83,18 +85,13 @@ t.Commit()
 
 # Optimized diameter mapping using a dictionary
 DIAMETER_MAP = {
-    (0.0, 1.0): 2.0,
-    (1.0, 1.25): 2.5,
-    (1.25, 1.5): 3.0,
-    (1.5, 2.5): 4.0,
-    (2.5, 3.5): 5.0,
-    (3.5, 4.5): 6.0,
-    (4.5, 7.5): 8.0,
-    (7.5, 8.5): 10.0,
-    (8.5, 10.5): 12.0,
-    (10.5, 14.5): 16.0,
-    (14.5, 16.5): 18.0,
-    (16.5, 18.5): 20.0
+    (0.0, 1.0): 2.0, (1.0, 1.25): 2.5, (1.25, 1.5): 3.0,
+    (1.5, 2.5): 4.0, (2.5, 3.5): 5.0, (3.5, 4.5): 6.0,
+    (4.5, 7.5): 8.0, (7.5, 8.5): 10.0, (8.5, 10.5): 12.0,
+    (10.5, 14.5): 16.0, (14.5, 16.5): 18.0, (16.5, 18.5): 20.0,
+    (18.5, 20.5): 22.0, (20.5, 22.5): 24.0, (22.5, 24.5): 26.0,
+    (24.5, 26.5): 28.0, (26.5, 28.5): 30.0, (28.5, 30.5): 32.0,
+    (30.5, 32.5): 34.0, (32.5, 34.5): 36.0
 }
 
 def select_fabrication_pipe():
