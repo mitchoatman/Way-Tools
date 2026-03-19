@@ -162,7 +162,6 @@ def place_sleeve_at_intersection(pipe, pt, symbol, level, existing):
 
     size_str = pipe.get_Parameter(DB.BuiltInParameter.RBS_REFERENCE_OVERALLSIZE).AsString() or ""
     cleaned = clean_size_string(size_str)
-    print cleaned
 
     try:
         dia_in = float(cleaned)
