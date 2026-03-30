@@ -103,7 +103,7 @@ for hanger in hanger_collector:
             if HostSize == '8"ø':
                 set_parameter_by_name(hanger, 'FP_Pointload', 50)
 
-        if Hostmat == 'Carbon Steel: Carbon Steel':
+        if Hostmat == 'Pipe Systems: Carbon Steel':
             HostSize = get_parameter_value_by_name_AsString(doc.GetElement(hosted_info), 'Size')
             if HostSize == '1/2"ø':
                 set_parameter_by_name(hanger, 'FP_Pointload', 1)
@@ -153,7 +153,7 @@ for hanger in hanger_collector:
             if HostSize == '8"ø':
                 set_parameter_by_name(hanger, 'FP_Pointload', 37)
 
-        if Hostmat in ['PVC: PVC', 'PVC: Sch 40 Clear PVC']:
+        if Hostmat in ['Pipe Systems: PVC']:
             HostSize = get_parameter_value_by_name_AsString(doc.GetElement(hosted_info), 'Size')
             if HostSize == '2"ø':
                 set_parameter_by_name(hanger, 'FP_Pointload', 1)
