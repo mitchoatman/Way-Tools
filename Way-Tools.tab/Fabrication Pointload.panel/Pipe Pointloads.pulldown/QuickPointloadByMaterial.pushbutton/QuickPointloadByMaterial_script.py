@@ -166,7 +166,7 @@ for hanger in hanger_collector:
             if HostSize == '8"ø':
                 set_parameter_by_name(hanger, 'FP_Pointload', 9)
             if HostSize == '10"ø':
-
+                set_parameter_by_name(hanger, 'FP_Pointload', 14)
 
         if Hostmat.startswith("PolyPro:"):
             HostSize = get_parameter_value_by_name_AsString(doc.GetElement(hosted_info), 'Size')
