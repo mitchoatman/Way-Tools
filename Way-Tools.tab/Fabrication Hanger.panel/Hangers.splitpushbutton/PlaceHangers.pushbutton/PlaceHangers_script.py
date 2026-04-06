@@ -48,7 +48,20 @@ def find_nearest_connector(element, pick_point):
 def vertical_fab(element):
     pts = [c.Origin for c in element.ConnectorManager.Connectors]
     if len(pts) >= 2:
-        return abs(pts[0].X - pts[1].X) < 0.001 and abs(pts[0].Y - pts[1].Y) < 0.001
+        v = pts[1].Subtract(pts[0])
+        if v.GetLength() < 0.0001:
+            return False
+
+        v = v.Normalize()
+
+        # angle from horizontal = arcsin(|Z|)
+        angle_from_horizontal = math.asin(abs(v.Z))
+
+        # 30 degrees in radians
+        threshold = math.radians(22.5)
+
+        return angle_from_horizontal > threshold
+
     return False
 
 def is_pipe(element):
