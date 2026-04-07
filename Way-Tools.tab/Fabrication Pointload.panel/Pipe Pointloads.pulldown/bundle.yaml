@@ -3,12 +3,5 @@ layout:
   - ---
   - Pipe Pointload
   - ---
-  - QuickCIPointload
-  - QuickCUPointload
-  - QuickCSPointload
-  - QuickSSPointload
-  - ---
   - Pipe Pointload 10x
-  - Pipe Dry Pointload
-  - ---
-  - Pipe Accessory Pointload
+
