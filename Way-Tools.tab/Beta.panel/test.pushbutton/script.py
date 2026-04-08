@@ -1,6 +1,7 @@
 # coding: utf8
 import clr
 import math
+import re
 import sys
 
 clr.AddReference("PresentationFramework")
@@ -15,6 +16,7 @@ from Autodesk.Revit.Exceptions import OperationCanceledException
 from System.Windows import Window, Thickness, WindowStartupLocation, ResizeMode
 from System.Windows.Controls import StackPanel, TextBox, ListBox, Label, ComboBox
 from System.Windows.Input import Keyboard
+from fractions import Fraction
 
 # Revit
 doc = __revit__.ActiveUIDocument.Document
@@ -282,7 +284,7 @@ def is_vertical_pipe(pipe):
     return abs(direction.Z) > 0.99
 
 # -----------------------------
-# INTERSECTION CALC (FIXED)
+# INTERSECTION CALC
 # -----------------------------
 def get_pipe_intersections(pipe, levels):
     curve = pipe.Location.Curve
@@ -324,6 +326,43 @@ def align_top_to_point(doc, part, target_point):
     ElementTransformUtils.MoveElement(doc, part.Id, move_vec)
 
 # -----------------------------
+# FORMATTING UNITS OF OVERALLSIZE
+# -----------------------------
+def clean_size_string(size_str):
+    if not size_str:
+        return ""
+    return re.sub(r'["\']|ø', '', size_str.strip())
+
+def parse_overall_size_to_feet(host_part):
+    # Try built-in first
+    p = host_part.get_Parameter(BuiltInParameter.RBS_REFERENCE_OVERALLSIZE)
+
+    # Fallback to named parameter if needed
+    if p is None:
+        p = host_part.LookupParameter("Overall Size")
+
+    if p is None:
+        raise Exception("Could not find 'Overall Size' parameter.")
+
+    raw = clean_size_string(p.AsString() or "")
+    if not raw:
+        raise Exception("Overall Size is empty.")
+
+    try:
+        dia_in = float(raw)
+    except ValueError:
+        m = re.match(r'(?:(\d+)[-\s])?(\d+/\d+)$', raw)
+        if m:
+            int_part, frac_part = m.groups()
+            dia_in = float(Fraction(frac_part))
+            if int_part:
+                dia_in += float(int_part)
+        else:
+            raise Exception("Could not parse Overall Size: {}".format(raw))
+
+    return dia_in / 12.0  # Revit internal units = feet
+
+# -----------------------------
 # CREATE PART + MOVE + ROTATE
 # -----------------------------
 t = None
@@ -337,13 +376,13 @@ try:
     placed_count = 0
 
     for host_part in host_parts:
-        # Get pipe size
-        diam_param = host_part.LookupParameter("Main Primary Diameter")
-        if diam_param is None:
+        # Get pipe size from Overall Size
+        try:
+            current_diameter = parse_overall_size_to_feet(host_part)
+        except:
             continue
 
-        current_diameter = diam_param.AsDouble()
-        new_diameter = current_diameter + (2.0 / 12.0)  # +2"
+        new_diameter = current_diameter + (2.0 / 12.0)  # keep your +2" clearance
 
         # Get intersections for this pipe
         intersections = get_pipe_intersections(host_part, all_levels)
