@@ -1,0 +1,11 @@
+#highlight: new
+
+# bundle title
+title:
+  "Test"
+
+# bundle tooltip
+tooltip: |-
+  imma a goofy goober
+
+
