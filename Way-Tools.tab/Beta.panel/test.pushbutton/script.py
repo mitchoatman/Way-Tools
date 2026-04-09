@@ -36,18 +36,6 @@ DIAMETER_MAP = {
 }
 
 # -----------------------------
-# SELECTION FILTER
-# -----------------------------
-class FabricationStraightSelectionFilter(ISelectionFilter):
-    def AllowElement(self, elem):
-        try:
-            return isinstance(elem, FabricationPart) and isinstance(elem.Location, LocationCurve)
-        except:
-            return False
-    def AllowReference(self, reference, point):
-        return False
-
-# -----------------------------
 # SIZE HELPERS
 # -----------------------------
 def clean_size_string(size_str):
@@ -99,20 +87,6 @@ def get_mapped_sleeve_diameter_feet(host_part):
 # -----------------------------
 # PIPE POINTS & DIRECTION
 # -----------------------------
-def get_projected_insert_point(host_part):
-    picked_point = uidoc.Selection.PickPoint("Pick a point along the pipe centerline")
-    curve = host_part.Location.Curve
-    result = curve.Project(picked_point)
-    if not result:
-        raise Exception("Could not project picked point onto pipe centerline.")
-    return result.XYZPoint
-
-def get_pipe_midpoint(host_part):
-    curve = host_part.Location.Curve
-    p0 = curve.GetEndPoint(0)
-    p1 = curve.GetEndPoint(1)
-    return (p0 + p1) * 0.5
-
 def get_pipe_direction(host_part):
     curve = host_part.Location.Curve
     p0 = curve.GetEndPoint(0)
@@ -144,42 +118,125 @@ def rotate_to_vector(doc, element, origin, from_vec, to_vec):
     rot_line = Line.CreateBound(origin, origin + axis)
     ElementTransformUtils.RotateElement(doc, element.Id, rot_line, angle)
 
-def ensure_facing_user(doc, element, origin):
-    view = doc.ActiveView
-    view_dir = view.ViewDirection.Normalize()
-    part_dir = XYZ.BasisX
+# -----------------------------
+# POINT CONVERTER
+# -----------------------------
+class PointConverter:
+    """Convert coordinates between internal / project / survey systems."""
+    def __init__(self, x, y, z, coord_sys='internal', doc=None):
+        if doc is None:
+            doc = __revit__.ActiveUIDocument.Document
+        self.doc = doc
+        pt = XYZ(x, y, z)
 
-    part_proj = part_dir - view_dir.Multiply(part_dir.DotProduct(view_dir))
-    part_proj_length = part_proj.GetLength()
-    if part_proj_length < 1e-6:
+        srv_trans = self._get_survey_transform()
+        proj_trans = self._get_project_transform()
+
+        if coord_sys.lower() == 'internal':
+            self.internal = pt
+            self.survey   = srv_trans.Inverse.OfPoint(pt)
+            self.project  = proj_trans.Inverse.OfPoint(pt)
+        elif coord_sys.lower() == 'project':
+            self.project  = pt
+            self.internal = proj_trans.OfPoint(pt)
+            self.survey   = srv_trans.Inverse.OfPoint(self.internal)
+        elif coord_sys.lower() == 'survey':
+            self.survey   = pt
+            self.internal = srv_trans.OfPoint(pt)
+            self.project  = proj_trans.Inverse.OfPoint(self.internal)
+        else:
+            raise ValueError("coord_sys must be 'internal', 'project' or 'survey'")
+
+    def _get_survey_transform(self):
+        return self.doc.ActiveProjectLocation.GetTotalTransform()
+
+    def _get_project_transform(self):
+        collector = FilteredElementCollector(self.doc).OfClass(ProjectLocation).WhereElementIsNotElementType()
+        for loc in collector:
+            if loc.Name == "Project":
+                return loc.GetTotalTransform()
+        return Transform.Identity
+
+def is_vertical_pipe(pipe):
+    if pipe.ItemCustomId != 2041:
+        return False
+    conns = list(pipe.ConnectorManager.Connectors)
+    if len(conns) < 2:
+        return False
+    direction = (conns[1].Origin - conns[0].Origin).Normalize()
+    return abs(direction.Z) > 0.99
+
+# -----------------------------
+# INTERSECTION CALC
+# -----------------------------
+def get_pipe_intersections(pipe, levels):
+    curve = pipe.Location.Curve
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+
+    intersection_data = []
+
+    dz = (p1.Z - p0.Z)
+    if abs(dz) < 1e-6:
+        return []
+
+    for level in levels:
+        z = level.Elevation
+        t = (z - p0.Z) / dz
+
+        if 0.0 <= t <= 1.0:
+            pt = p0 + (p1 - p0) * t
+            intersection_data.append((pt, level))
+
+    return intersection_data
+
+def align_top_to_point(doc, part, target_point):
+    bbox = part.get_BoundingBox(None)
+    if bbox is None:
         return
-    part_proj = part_proj.Normalize()
 
-    screen_right = view.RightDirection.Normalize()
-    axis = view_dir
-    angle = math.acos(max(min(part_proj.DotProduct(screen_right), 1.0), -1.0))
-
-    if part_proj.CrossProduct(screen_right).DotProduct(axis) < 0:
-        angle = -angle
-
-    rot_line = Line.CreateBound(origin, origin + axis)
-    ElementTransformUtils.RotateElement(doc, element.Id, rot_line, angle)
+    top_z = bbox.Max.Z
+    delta_z = target_point.Z - top_z
+    move_vec = XYZ(0, 0, delta_z)
+    ElementTransformUtils.MoveElement(doc, part.Id, move_vec)
 
 # -----------------------------
-# SELECTION
+# GET PRE-SELECTED OR VIEW PIPES
 # -----------------------------
-straight_filter = FabricationStraightSelectionFilter()
-try:
-    host_parts = list(uidoc.Selection.PickElementsByRectangle(
-        straight_filter,
-        "Window-select fabrication pipes/straights"
-    ))
-except OperationCanceledException:
-    sys.exit()
+selected_ids = uidoc.Selection.GetElementIds()
+host_parts = []
 
-if not host_parts:
-    TaskDialog.Show("Info", "No fabrication pipes selected.")
-    sys.exit()
+if selected_ids.Count > 0:
+    # Pre-selection mode
+    for eid in selected_ids:
+        element = doc.GetElement(eid)
+        if isinstance(element, FabricationPart) and isinstance(element.Location, LocationCurve):
+            host_parts.append(element)
+    
+    if not host_parts:
+        TaskDialog.Show("Error", "No valid fabrication pipes in selection.")
+        sys.exit()
+else:
+    # Default mode - all visible in current view
+    curview = doc.ActiveView
+    is_3d = curview.ViewType == ViewType.ThreeD
+    is_plan = curview.ViewType == ViewType.FloorPlan
+    
+    if not is_3d and not is_plan:
+        TaskDialog.Show("Error", "This script supports 3D and Floor Plan views only.")
+        sys.exit()
+    
+    visible_pipes = FilteredElementCollector(doc, curview.Id)\
+                    .OfCategory(BuiltInCategory.OST_FabricationPipework)\
+                    .WhereElementIsNotElementType().ToElements()
+    
+    for pipe in visible_pipes:
+        if isinstance(pipe, FabricationPart) and isinstance(pipe.Location, LocationCurve):
+            host_parts.append(pipe)
+    
+    if not host_parts:
+        TaskDialog.Show("Info", "No fabrication pipes found in current view.")
+        sys.exit()
 
 # -----------------------------
 # GET SERVICE & BUTTONS
@@ -194,7 +251,7 @@ for s in services:
         break
 
 if not target_service:
-    TaskDialog.Show("Error", "Could not find a fabrication service named 'Sleeves'.")
+    TaskDialog.Show("Error", "Could not find a fabrication service named 'Plumbing: Sleeves'.")
     sys.exit()
 
 palette_names = []
@@ -225,7 +282,7 @@ for p in range(target_service.PaletteCount):
             })
 
 if not button_records:
-    TaskDialog.Show("Error", "No fabrication buttons found for the 'Sleeves' service.")
+    TaskDialog.Show("Error", "No fabrication buttons found for the 'Plumbing: Sleeves' service.")
     sys.exit()
 
 # -----------------------------
@@ -318,88 +375,6 @@ if not dlg.ShowDialog():
 selected_record = dlg.selected_record
 fab_btn = selected_record["button"]
 condition_index = selected_record["condition_index"]
-
-# -----------------------------
-# POINT CONVERTER
-# -----------------------------
-class PointConverter:
-    """Convert coordinates between internal / project / survey systems."""
-    def __init__(self, x, y, z, coord_sys='internal', doc=None):
-        if doc is None:
-            doc = __revit__.ActiveUIDocument.Document
-        self.doc = doc
-        pt = XYZ(x, y, z)
-
-        srv_trans = self._get_survey_transform()
-        proj_trans = self._get_project_transform()
-
-        if coord_sys.lower() == 'internal':
-            self.internal = pt
-            self.survey   = srv_trans.Inverse.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(pt)
-        elif coord_sys.lower() == 'project':
-            self.project  = pt
-            self.internal = proj_trans.OfPoint(pt)
-            self.survey   = srv_trans.Inverse.OfPoint(self.internal)
-        elif coord_sys.lower() == 'survey':
-            self.survey   = pt
-            self.internal = srv_trans.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(self.internal)
-        else:
-            raise ValueError("coord_sys must be 'internal', 'project' or 'survey'")
-
-    def _get_survey_transform(self):
-        return self.doc.ActiveProjectLocation.GetTotalTransform()
-
-    def _get_project_transform(self):
-        collector = FilteredElementCollector(self.doc).OfClass(ProjectLocation).WhereElementIsNotElementType()
-        for loc in collector:
-            if loc.Name == "Project":
-                return loc.GetTotalTransform()
-        return Transform.Identity
-
-def is_vertical_pipe(pipe):
-    if pipe.ItemCustomId != 2041:
-        return False
-    conns = list(pipe.ConnectorManager.Connectors)
-    if len(conns) < 2:
-        return False
-    direction = (conns[1].Origin - conns[0].Origin).Normalize()
-    return abs(direction.Z) > 0.99
-
-# -----------------------------
-# INTERSECTION CALC
-# -----------------------------
-def get_pipe_intersections(pipe, levels):
-    curve = pipe.Location.Curve
-    p0 = curve.GetEndPoint(0)
-    p1 = curve.GetEndPoint(1)
-
-    intersection_data = []
-
-    dz = (p1.Z - p0.Z)
-    if abs(dz) < 1e-6:
-        return []
-
-    for level in levels:
-        z = level.Elevation
-        t = (z - p0.Z) / dz
-
-        if 0.0 <= t <= 1.0:
-            pt = p0 + (p1 - p0) * t
-            intersection_data.append((pt, level))
-
-    return intersection_data
-
-def align_top_to_point(doc, part, target_point):
-    bbox = part.get_BoundingBox(None)
-    if bbox is None:
-        return
-
-    top_z = bbox.Max.Z
-    delta_z = target_point.Z - top_z
-    move_vec = XYZ(0, 0, delta_z)
-    ElementTransformUtils.MoveElement(doc, part.Id, move_vec)
 
 # -----------------------------
 # CREATE PART + MOVE + ROTATE
