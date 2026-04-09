@@ -53,6 +53,22 @@ with open(sleeve_length_file, 'r') as f:
     sleeve_length = float(f.read().strip())
 
 # -----------------------------
+# DUPLICATE DETECTION FUNCTION
+# -----------------------------
+def is_duplicate_sleeve(point, existing_parts, tol=0.02):
+    for el in existing_parts:
+        try:
+            loc = el.Origin
+            if loc and all(abs(a - b) < tol for a, b in zip(
+                (loc.X, loc.Y, loc.Z),
+                (point.X, point.Y, point.Z)
+            )):
+                return True
+        except:
+            continue
+    return False
+
+# -----------------------------
 # SIZE HELPERS
 # -----------------------------
 def clean_size_string(size_str):
@@ -68,10 +84,6 @@ def parse_size_string_to_inches(size_str):
     except ValueError:
         pass
 
-    # Supports:
-    # 1 1/2
-    # 1-1/2
-    # 1/2
     m = re.match(r'^\s*(?:(\d+)[-\s])?(\d+/\d+)\s*$', cleaned)
     if m:
         int_part, frac_part = m.groups()
@@ -97,7 +109,7 @@ def get_mapped_sleeve_diameter_feet(host_part):
 
     for (lo, hi), sleeve_in in DIAMETER_MAP.items():
         if lo < pipe_dia_in <= hi:
-            return sleeve_in / 12.0  # internal units = feet
+            return sleeve_in / 12.0
 
     return 2.0 / 12.0
 
@@ -134,54 +146,6 @@ def rotate_to_vector(doc, element, origin, from_vec, to_vec):
 
     rot_line = Line.CreateBound(origin, origin + axis)
     ElementTransformUtils.RotateElement(doc, element.Id, rot_line, angle)
-
-# -----------------------------
-# POINT CONVERTER
-# -----------------------------
-class PointConverter:
-    """Convert coordinates between internal / project / survey systems."""
-    def __init__(self, x, y, z, coord_sys='internal', doc=None):
-        if doc is None:
-            doc = __revit__.ActiveUIDocument.Document
-        self.doc = doc
-        pt = XYZ(x, y, z)
-
-        srv_trans = self._get_survey_transform()
-        proj_trans = self._get_project_transform()
-
-        if coord_sys.lower() == 'internal':
-            self.internal = pt
-            self.survey   = srv_trans.Inverse.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(pt)
-        elif coord_sys.lower() == 'project':
-            self.project  = pt
-            self.internal = proj_trans.OfPoint(pt)
-            self.survey   = srv_trans.Inverse.OfPoint(self.internal)
-        elif coord_sys.lower() == 'survey':
-            self.survey   = pt
-            self.internal = srv_trans.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(self.internal)
-        else:
-            raise ValueError("coord_sys must be 'internal', 'project' or 'survey'")
-
-    def _get_survey_transform(self):
-        return self.doc.ActiveProjectLocation.GetTotalTransform()
-
-    def _get_project_transform(self):
-        collector = FilteredElementCollector(self.doc).OfClass(ProjectLocation).WhereElementIsNotElementType()
-        for loc in collector:
-            if loc.Name == "Project":
-                return loc.GetTotalTransform()
-        return Transform.Identity
-
-def is_vertical_pipe(pipe):
-    if pipe.ItemCustomId != 2041:
-        return False
-    conns = list(pipe.ConnectorManager.Connectors)
-    if len(conns) < 2:
-        return False
-    direction = (conns[1].Origin - conns[0].Origin).Normalize()
-    return abs(direction.Z) > 0.99
 
 # -----------------------------
 # INTERSECTION CALC
@@ -224,39 +188,21 @@ selected_ids = uidoc.Selection.GetElementIds()
 host_parts = []
 
 if selected_ids.Count > 0:
-    # Pre-selection mode
     for eid in selected_ids:
         element = doc.GetElement(eid)
         if isinstance(element, FabricationPart) and isinstance(element.Location, LocationCurve):
             host_parts.append(element)
-    
-    if not host_parts:
-        TaskDialog.Show("Error", "No valid fabrication pipes in selection.")
-        sys.exit()
 else:
-    # Default mode - all visible in current view
     curview = doc.ActiveView
-    is_3d = curview.ViewType == ViewType.ThreeD
-    is_plan = curview.ViewType == ViewType.FloorPlan
-    
-    if not is_3d and not is_plan:
-        TaskDialog.Show("Error", "This script supports 3D and Floor Plan views only.")
-        sys.exit()
-    
     visible_pipes = FilteredElementCollector(doc, curview.Id)\
                     .OfCategory(BuiltInCategory.OST_FabricationPipework)\
                     .WhereElementIsNotElementType().ToElements()
-    
     for pipe in visible_pipes:
         if isinstance(pipe, FabricationPart) and isinstance(pipe.Location, LocationCurve):
             host_parts.append(pipe)
-    
-    if not host_parts:
-        TaskDialog.Show("Info", "No fabrication pipes found in current view.")
-        sys.exit()
 
 # -----------------------------
-# GET SERVICE & BUTTONS
+# SERVICE
 # -----------------------------
 config = FabricationConfiguration.GetFabricationConfiguration(doc)
 services = config.GetAllLoadedServices()
@@ -268,191 +214,77 @@ for s in services:
         break
 
 if not target_service:
-    TaskDialog.Show("Error", "Could not find a fabrication service named 'Plumbing: Sleeves'.")
+    TaskDialog.Show("Error", "Could not find service.")
     sys.exit()
 
-palette_names = []
-button_records = []
-for p in range(target_service.PaletteCount):
-    palette_name = target_service.GetPaletteName(p)
-    palette_names.append(palette_name)
-    for i in range(target_service.GetButtonCount(p)):
-        btn = target_service.GetButton(p, i)
-        if btn.ConditionCount > 1:
-            for c in range(btn.ConditionCount):
-                display = u"{1}".format(btn.Name, btn.GetConditionName(c))
-                button_records.append({
-                    "palette_index": p,
-                    "palette_name": palette_name,
-                    "display": display,
-                    "button": btn,
-                    "condition_index": c
-                })
-        else:
-            display = u"{0}".format(btn.Name)
-            button_records.append({
-                "palette_index": p,
-                "palette_name": palette_name,
-                "display": display,
-                "button": btn,
-                "condition_index": 0
-            })
-
-if not button_records:
-    TaskDialog.Show("Error", "No fabrication buttons found for the 'Plumbing: Sleeves' service.")
-    sys.exit()
+button = target_service.GetButton(0, 0)
+condition_index = 0
 
 # -----------------------------
-# WPF PART PICKER
+# CREATE PARTS
 # -----------------------------
-class PartPicker(Window):
-    def __init__(self, records, palettes):
-        self.all_records = list(records)
-        self.filtered_records = list(records)
-        self.selected_record = None
-        self.Title = "Select Fabrication Part"
-        self.Width = 400
-        self.Height = 620
-        self.WindowStartupLocation = WindowStartupLocation.CenterScreen
-        self.ResizeMode = ResizeMode.CanResize
+t = Transaction(doc, "Place Sleeves")
+t.Start()
 
-        stack = StackPanel()
-        stack.Margin = Thickness(10)
+all_levels = list(FilteredElementCollector(doc).OfClass(Level))
 
-        lbl_palette = Label()
-        lbl_palette.Content = "Palette:"
-        stack.Children.Add(lbl_palette)
+# --- DUPLICATE DETECTION (collect existing)
+existing_sleeves = list(
+    FilteredElementCollector(doc)
+    .OfCategory(BuiltInCategory.OST_FabricationPipework)
+    .WhereElementIsNotElementType()
+    .ToElements()
+)
 
-        self.palette_combo = ComboBox()
-        self.palette_combo.Margin = Thickness(0,0,0,10)
-        self.palette_combo.Items.Add("All Palettes")
-        for p in palettes:
-            self.palette_combo.Items.Add(p)
-        self.palette_combo.SelectedIndex = 0
-        self.palette_combo.SelectionChanged += self.apply_filters
-        stack.Children.Add(self.palette_combo)
+placed_count = 0
 
-        lbl_search = Label()
-        lbl_search.Content = "Search Part:"
-        stack.Children.Add(lbl_search)
+for host_part in host_parts:
 
-        self.search_box = TextBox()
-        self.search_box.Margin = Thickness(0,0,0,10)
-        self.search_box.TextChanged += self.apply_filters
-        stack.Children.Add(self.search_box)
+    try:
+        new_diameter = get_mapped_sleeve_diameter_feet(host_part)
+    except:
+        continue
 
-        lbl_instr = Label()
-        lbl_instr.Content = "Double Click Item to Insert"
-        lbl_instr.Margin = Thickness(0,0,0,5)
-        stack.Children.Add(lbl_instr)
+    intersections = get_pipe_intersections(host_part, all_levels)
+    if not intersections:
+        continue
 
-        self.list_box = ListBox()
-        self.list_box.Height = 430
-        self.list_box.Margin = Thickness(0,0,0,10)
-        self.list_box.MouseDoubleClick += self.on_double_click
-        stack.Children.Add(self.list_box)
+    pipe_dir = get_pipe_direction(host_part)
 
-        self.Content = stack
-        self.refresh_list()
-        self.search_box.Focus()
-        Keyboard.Focus(self.search_box)
+    for pt, level in intersections:
 
-    def refresh_list(self):
-        self.list_box.ItemsSource = [r["display"] for r in self.filtered_records]
-
-    def apply_filters(self, sender, args):
-        sel_palette = self.palette_combo.SelectedItem
-        search_text = self.search_box.Text.lower().strip()
-        records = self.all_records
-
-        if sel_palette and sel_palette != "All Palettes":
-            records = [r for r in records if r["palette_name"] == sel_palette]
-        if search_text:
-            records = [r for r in records if search_text in r["display"].lower()]
-
-        self.filtered_records = records
-        self.refresh_list()
-
-    def on_double_click(self, sender, args):
-        idx = self.list_box.SelectedIndex
-        if idx < 0 or idx >= len(self.filtered_records):
-            TaskDialog.Show("Error", "Please select a part.")
-            return
-        self.selected_record = self.filtered_records[idx]
-        self.DialogResult = True
-        self.Close()
-
-# -----------------------------
-# SHOW DIALOG
-# -----------------------------
-dlg = PartPicker(button_records, palette_names)
-if not dlg.ShowDialog():
-    sys.exit()
-
-selected_record = dlg.selected_record
-fab_btn = selected_record["button"]
-condition_index = selected_record["condition_index"]
-
-# -----------------------------
-# CREATE PART + MOVE + ROTATE
-# -----------------------------
-t = None
-try:
-    t = Transaction(doc, "Place Fabrication Sleeves at Level Intersections")
-    t.Start()
-
-    all_levels = list(FilteredElementCollector(doc).OfClass(Level))
-    placed_count = 0
-
-    for host_part in host_parts:
-        try:
-            new_diameter = get_mapped_sleeve_diameter_feet(host_part)
-        except:
+        # --- DUPLICATE DETECTION (skip if exists)
+        if is_duplicate_sleeve(pt, existing_sleeves):
             continue
 
-        intersections = get_pipe_intersections(host_part, all_levels)
-        if not intersections:
-            continue
+        new_part = FabricationPart.Create(doc, button, condition_index, level.Id)
 
-        pipe_dir = get_pipe_direction(host_part)
+        doc.Regenerate()
 
-        for pt, level in intersections:
-            new_part = FabricationPart.Create(
-                doc,
-                fab_btn,
-                condition_index,
-                level.Id
-            )
+        size_param = new_part.LookupParameter("Main Primary Diameter")
+        if size_param and not size_param.IsReadOnly:
+            size_param.Set(new_diameter)
 
-            doc.Regenerate()
+        length_param = new_part.LookupParameter("Length")
+        if length_param and not length_param.IsReadOnly:
+            length_param.Set(sleeve_length)
 
-            size_param = new_part.LookupParameter("Main Primary Diameter")
-            if size_param and not size_param.IsReadOnly:
-                size_param.Set(new_diameter)
+        move_vec = pt - new_part.Origin
+        ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
 
-            length_param = new_part.LookupParameter("Length")
-            if length_param and not length_param.IsReadOnly:
-                length_param.Set(sleeve_length)
+        rotate_to_vector(doc, new_part, pt, XYZ.BasisX, pipe_dir.Multiply(-1))
 
-            move_vec = pt - new_part.Origin
-            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+        doc.Regenerate()
 
-            rotate_to_vector(doc, new_part, pt, XYZ.BasisX, pipe_dir.Multiply(-1))
+        align_top_to_point(doc, new_part, pt)
 
-            doc.Regenerate()
+        placed_count += 1
 
-            align_top_to_point(doc, new_part, pt)
+        # --- DUPLICATE DETECTION (track newly placed)
+        existing_sleeves.append(new_part)
 
-            placed_count += 1
-
-    if placed_count == 0:
-        TaskDialog.Show("Info", "No sleeves were placed.")
-        t.RollBack()
-        sys.exit()
-
+if placed_count == 0:
+    TaskDialog.Show("Info", "No sleeves placed.")
+    t.RollBack()
+else:
     t.Commit()
-
-except Exception as ex:
-    if t and t.HasStarted() and not t.HasEnded():
-        t.RollBack()
-    TaskDialog.Show("Error", str(ex))
