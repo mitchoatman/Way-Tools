@@ -4,6 +4,7 @@ import math
 import sys
 import re
 from fractions import Fraction
+import os
 
 clr.AddReference("PresentationFramework")
 clr.AddReference("PresentationCore")
@@ -34,6 +35,22 @@ DIAMETER_MAP = {
     (24.5, 26.5): 28.0, (26.5, 28.5): 30.0, (28.5, 30.5): 32.0,
     (30.5, 32.5): 34.0, (32.5, 34.5): 36.0
 }
+
+# -----------------------------
+# SLEEVE LENGTH FROM FILE
+# -----------------------------
+temp_folder = r"c:\Temp"
+sleeve_length_file = os.path.join(temp_folder, 'Ribbon_Sleeve.txt')
+
+if not os.path.exists(temp_folder):
+    os.makedirs(temp_folder)
+
+if not os.path.exists(sleeve_length_file):
+    with open(sleeve_length_file, 'w') as f:
+        f.write('6')
+
+with open(sleeve_length_file, 'r') as f:
+    sleeve_length = float(f.read().strip())
 
 # -----------------------------
 # SIZE HELPERS
@@ -412,6 +429,10 @@ try:
             size_param = new_part.LookupParameter("Main Primary Diameter")
             if size_param and not size_param.IsReadOnly:
                 size_param.Set(new_diameter)
+
+            length_param = new_part.LookupParameter("Length")
+            if length_param and not length_param.IsReadOnly:
+                length_param.Set(sleeve_length)
 
             move_vec = pt - new_part.Origin
             ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
