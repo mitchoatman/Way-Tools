@@ -16,10 +16,6 @@ tooltip: |-
   
   Pre-Selected - sleeves are placed on the selected element(s) only.
 
-  # [Shift]+Click:
-  # Place floor sleeve manually. Pay attention to workplane setting
-  # under ribbon.  Set to appropriate level you wish to place sleeve on.
-
 # context directives are listed under `context` key, the order does not matter
 #context:
 #  - Selection
