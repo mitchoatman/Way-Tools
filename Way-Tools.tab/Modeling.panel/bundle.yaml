@@ -1,5 +1,7 @@
 layout:
+  - FloorSleeve
   - Connect
+  - SleeveConfig
 
 
 background:
