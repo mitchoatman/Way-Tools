@@ -1,26 +1,23 @@
+import Autodesk
 from Autodesk.Revit import DB
 from Autodesk.Revit.DB import FilteredElementCollector, Transaction, BuiltInCategory, FamilySymbol, Family, Structure, XYZ, LocationCurve, TransactionGroup
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from Autodesk.Revit.UI import TaskDialog
-import os
+import os, re, sys
 from math import atan2, pi
-import re
 from fractions import Fraction
+from Parameters.Add_SharedParameters import Shared_Params
+Shared_Params()
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
+curview = doc.ActiveView
+app = doc.Application
+RevitVersion = app.VersionNumber
+RevitINT = float(RevitVersion)
 
 path, filename = os.path.split(__file__)
 NewFilename = r'\Strut Clamp.rfa'
-
-# Combined selection filter for MEP Fabrication Pipework and Hangers
-class FabricationPipeAndHangerFilter(ISelectionFilter):
-    def AllowElement(self, element):
-        if element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_FabricationPipework):
-            return element.ItemCustomId == 2041
-        return element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_FabricationHangers)
-    def AllowReference(self, reference, point):
-        return False
 
 # Family loading options with minimal parameter overwrites
 class FamilyLoaderOptionsHandler(DB.IFamilyLoadOptions):
@@ -32,20 +29,45 @@ class FamilyLoaderOptionsHandler(DB.IFamilyLoadOptions):
         overwriteParameterValues.Value = False
         return True
 
+# Selection filter for MEP Fabrication Pipework and Hangers
+class PickByCategorySelectionFilter(ISelectionFilter):
+    """Selection filter implementation"""
+    def __init__(self, category_ids):
+        self.category_ids = category_ids
+
+    def AllowElement(self, element):
+        """Is element allowed to be selected?"""
+        if element.Category and element.Category.Id in self.category_ids:
+            return True
+        return False
+
+    def AllowReference(self, reference, point):
+        """Not used for selection"""
+        return False
+
 def select_fabrication_elements():
     try:
-        selection = uidoc.Selection.PickObjects(ObjectType.Element, FabricationPipeAndHangerFilter(), "Select MEP Fabrication Pipes and Hangers")
+        category_ids = [
+            DB.Category.GetCategory(doc, DB.BuiltInCategory.OST_FabricationPipework).Id,
+            DB.Category.GetCategory(doc, DB.BuiltInCategory.OST_FabricationHangers).Id
+        ]
+        msfilter = PickByCategorySelectionFilter(category_ids)
+        selection = uidoc.Selection.PickObjects(ObjectType.Element, msfilter, "Select MEP Fabrication Pipes and Hangers")
         pipes = []
         hangers = []
         for ref in selection:
             element = doc.GetElement(ref.ElementId)
-            if element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_FabricationPipework):
+            if element.Category and element.Category.Id == category_ids[0]:  # OST_FabricationPipework
                 pipes.append(element)
-            elif element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_FabricationHangers):
+            elif element.Category and element.Category.Id == category_ids[1]:  # OST_FabricationHangers
                 hangers.append(element)
         return pipes, hangers
-    except:
-        return [], []
+    except Autodesk.Revit.Exceptions.OperationCanceledException:
+        TaskDialog.Show("Selection Cancelled", "Selection was cancelled by the user. Please select at least one MEP Fabrication Pipe or Hanger to continue.")
+        sys.exit()  
+    except Exception, e:
+        TaskDialog.Show("Error", "An unexpected error occurred during selection: " + str(e))
+        sys.exit() 
 
 def get_pipe_centerline(pipe):
     location = pipe.Location
@@ -99,8 +121,12 @@ def get_pipe_reference_level(pipe):
     level_param = pipe.LookupParameter("Reference Level")
     if level_param and level_param.StorageType == DB.StorageType.ElementId:
         level_id = level_param.AsElementId()
-        if level_id.IntegerValue != -1:
-            return doc.GetElement(level_id)
+        if RevitINT > 2025:
+            if level_id.Value != -1:
+                return doc.GetElement(level_id)
+        else:
+            if level_id.IntegerValue != -1:
+                return doc.GetElement(level_id)            
     return None
 
 def get_existing_strut_clamps():
@@ -188,6 +214,12 @@ try:
                         rad_param = new_lrd.LookupParameter("rad")
                         if rad_param:
                             rad_param.Set(pipe_od)
+
+                        service_name_param = pipe.LookupParameter("Fabrication Service Name")
+                        if service_name_param:
+                            fp_service_param = new_lrd.LookupParameter("FP_Service Name")
+                            if fp_service_param:
+                                fp_service_param.Set(service_name_param.AsString())
 
                         pipe_connectors = list(pipe.ConnectorManager.Connectors)
                         vec_x = pipe_connectors[1].Origin.X - pipe_connectors[0].Origin.X

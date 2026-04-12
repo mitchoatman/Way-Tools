@@ -10,7 +10,7 @@ tooltip: |-
     1. Run Command.
     2. Select Fabrication Hangers and Pipes in a run that are related.
   
-  DON'T select an entire floor.  Meant for separate runs at a time.
+  DO NOT select an entire floor.  This is meant for separate runs at a time.
 
 # context directives are listed under `context` key, the order does not matter
 #context:
