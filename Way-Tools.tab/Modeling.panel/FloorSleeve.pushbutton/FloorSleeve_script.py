@@ -278,10 +278,13 @@ config = FabricationConfiguration.GetFabricationConfiguration(doc)
 services = config.GetAllLoadedServices()
 target_service = None
 
+target_service = None
+
 for s in services:
-    if s.Name == "Plumbing: Sleeves":
+    if s.Name and 'sleeves' in s.Name.lower():
         target_service = s
         break
+        
 
 if not target_service:
     TaskDialog.Show("Error", "Could not find a fabrication service named 'Plumbing: Sleeves'.")
