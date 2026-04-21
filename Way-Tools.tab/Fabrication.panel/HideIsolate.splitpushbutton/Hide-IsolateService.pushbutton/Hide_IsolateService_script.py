@@ -15,6 +15,7 @@ from System.Windows.Controls import Button, TextBox, CheckBox, Grid, RowDefiniti
     ColumnDefinition, Label, StackPanel, ScrollViewer, Orientation, ScrollBarVisibility
 from System.Windows.Media import Brushes, FontFamily
 from System.Windows.Controls.Primitives import UniformGrid
+from System.Windows.Input import Keyboard, ModifierKeys
 
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
@@ -44,6 +45,7 @@ class ServiceSelectionForm(object):
         self.service_list = sorted(service_list)
         self.checkboxes = []
         self.check_all_state = False
+        self.last_checked_index = None  # ✅ safe init
         self.InitializeComponents()
 
     def InitializeComponents(self):
@@ -99,7 +101,6 @@ class ServiceSelectionForm(object):
 
         self.update_checkboxes(self.service_list)
 
-        # ✅ Anchored button panel at absolute bottom
         button_container = Grid()
         button_container.HorizontalAlignment = HorizontalAlignment.Stretch
         button_container.VerticalAlignment = VerticalAlignment.Bottom
@@ -110,14 +111,13 @@ class ServiceSelectionForm(object):
         button_panel.VerticalAlignment = VerticalAlignment.Bottom
         button_panel.Margin = Thickness(0, 10, 0, 10)
 
-        # Buttons
         self.reset_button = Button()
         self.reset_button.Content = "Reset View"
         self.reset_button.Background = Brushes.Red
         self.reset_button.FontFamily = FontFamily("Arial")
         self.reset_button.FontSize = 12
         self.reset_button.Height = 25
-        self.reset_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
+        self.reset_button.Margin = Thickness(5, 0, 5, 0)
         self.reset_button.Click += self.reset_clicked
         button_panel.Children.Add(self.reset_button)
 
@@ -126,7 +126,7 @@ class ServiceSelectionForm(object):
         self.hide_button.FontFamily = FontFamily("Arial")
         self.hide_button.FontSize = 12
         self.hide_button.Height = 25
-        self.hide_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
+        self.hide_button.Margin = Thickness(5, 0, 5, 0)
         self.hide_button.Click += self.hide_clicked
         button_panel.Children.Add(self.hide_button)
 
@@ -135,7 +135,7 @@ class ServiceSelectionForm(object):
         self.isolate_button.FontFamily = FontFamily("Arial")
         self.isolate_button.FontSize = 12
         self.isolate_button.Height = 25
-        self.isolate_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
+        self.isolate_button.Margin = Thickness(5, 0, 5, 0)
         self.isolate_button.Click += self.isolate_clicked
         button_panel.Children.Add(self.isolate_button)
 
@@ -144,7 +144,7 @@ class ServiceSelectionForm(object):
         self.check_all_button.FontFamily = FontFamily("Arial")
         self.check_all_button.FontSize = 12
         self.check_all_button.Height = 25
-        self.check_all_button.Margin = Thickness(5, 0, 5, 0)  # Gap on left and right
+        self.check_all_button.Margin = Thickness(5, 0, 5, 0)
         self.check_all_button.Click += self.check_all_clicked
         button_panel.Children.Add(self.check_all_button)
 
@@ -154,7 +154,6 @@ class ServiceSelectionForm(object):
 
         self._window.Content = grid
         self._window.SizeChanged += self.on_resize
-
 
     def update_checkboxes(self, services):
         self.checkbox_panel.Children.Clear()
@@ -186,7 +185,20 @@ class ServiceSelectionForm(object):
         pass
 
     def checkbox_changed(self, sender, args):
-        self.selected_services = [cb.Content for cb in self.checkboxes if cb.IsChecked]
+        try:
+            current_index = self.checkboxes.index(sender)
+            if Keyboard.Modifiers == ModifierKeys.Shift and self.last_checked_index is not None:
+                start = min(self.last_checked_index, current_index)
+                end = max(self.last_checked_index, current_index)
+                state = sender.IsChecked
+                for i in range(start, end + 1):
+                    self.checkboxes[i].IsChecked = state
+
+            self.last_checked_index = current_index
+            self.selected_services = [cb.Content for cb in self.checkboxes if cb.IsChecked]
+
+        except Exception as e:
+            print("Checkbox Error: {}".format(str(e)))
 
     def reset_clicked(self, sender, args):
         try:
@@ -247,5 +259,20 @@ if not unique_services:
     TaskDialog.Show("Error", "No fabrication services found in the current view.")
     sys.exit()
 
+# ✅ NEW: get preselected services
+preselected_services = set()
+selection_ids = uidoc.Selection.GetElementIds()
+if selection_ids:
+    for eid in selection_ids:
+        el = doc.GetElement(eid)
+        try:
+            name = get_parameter_value_by_name_AsString(el, 'Fabrication Service Name')
+            if name:
+                preselected_services.add(name)
+        except:
+            pass
+
 form = ServiceSelectionForm(unique_services)
+form.selected_services = list(preselected_services)
+form.update_checkboxes(form.service_list)  # 👈 THIS is the fix
 form.ShowDialog()

@@ -1,7 +1,7 @@
 #highlight: new
 
 title:
-  "Reset\n View"
+  "Reset\nView"
 
 tooltip: >-
   Resets any temporary hide or isolate mode in active view.
