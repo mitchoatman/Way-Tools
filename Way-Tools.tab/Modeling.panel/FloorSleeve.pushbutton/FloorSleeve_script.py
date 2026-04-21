@@ -287,7 +287,7 @@ for s in services:
         
 
 if not target_service:
-    TaskDialog.Show("Error", "Could not find a fabrication service named 'Plumbing: Sleeves'.")
+    TaskDialog.Show("Error", "Could not find a Fabrication Service name containing 'Sleeve'.")
     sys.exit()
 
 palette_names = []
