@@ -1,12 +1,10 @@
 #highlight: new
 title:
-  "Floor\nSleeve"
+  "Sleeves"
 
 tooltip: |-
-  Place floor sleeve family on pipe centerline at vertical pipe and
-  level line intersection. Fabrication service name and abbreviation
-  will be added to the sleeves.  It will also assign the proper
-  schedule level while not duplicating existing sleeves.
+  Place floor or wall sleeve parts on pipe centerline. Floor sleeve at vertical
+  pipe and level line intersection. Wall sleeve at horizontal user picked location.
   
   1.  Click the button.
   2.  Sleeves are placed on pipes in the active view that cross a level line.

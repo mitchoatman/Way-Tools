@@ -10,7 +10,6 @@ clr.AddReference("PresentationFramework")
 clr.AddReference("PresentationCore")
 clr.AddReference("WindowsBase")
 
-from Autodesk.Revit import DB
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI import TaskDialog
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
@@ -68,10 +67,6 @@ def parse_size_string_to_inches(size_str):
     except ValueError:
         pass
 
-    # Supports:
-    # 1 1/2
-    # 1-1/2
-    # 1/2
     m = re.match(r'^\s*(?:(\d+)[-\s])?(\d+/\d+)\s*$', cleaned)
     if m:
         int_part, frac_part = m.groups()
@@ -97,12 +92,28 @@ def get_mapped_sleeve_diameter_feet(host_part):
 
     for (lo, hi), sleeve_in in DIAMETER_MAP.items():
         if lo < pipe_dia_in <= hi:
-            return sleeve_in / 12.0  # internal units = feet
+            return sleeve_in / 12.0
 
     return 2.0 / 12.0
 
+def set_part_size_and_length(new_part, host_part):
+    try:
+        new_diameter = get_mapped_sleeve_diameter_feet(host_part)
+        size_param = new_part.LookupParameter("Main Primary Diameter")
+        if size_param and not size_param.IsReadOnly:
+            size_param.Set(new_diameter)
+    except:
+        pass
+
+    try:
+        length_param = new_part.LookupParameter("Length")
+        if length_param and not length_param.IsReadOnly:
+            length_param.Set(sleeve_length)
+    except:
+        pass
+
 # -----------------------------
-# PIPE POINTS & DIRECTION
+# PIPE HELPERS
 # -----------------------------
 def get_pipe_direction(host_part):
     curve = host_part.Location.Curve
@@ -110,11 +121,38 @@ def get_pipe_direction(host_part):
     p1 = curve.GetEndPoint(1)
     return (p1 - p0).Normalize()
 
+def get_horizontal_pipe_direction(host_part):
+    curve = host_part.Location.Curve
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+
+    v = (p1 - p0)
+    horiz = XYZ(v.X, v.Y, 0.0)
+
+    if horiz.GetLength() < 1e-8:
+        raise Exception("Host pipe is vertical or too close to vertical for wall sleeve placement.")
+
+    return horiz.Normalize()
+
+def get_pipe_midpoint(host_part):
+    curve = host_part.Location.Curve
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+    return (p0 + p1) * 0.5
+
+def get_projected_insert_point(host_part):
+    picked_point = uidoc.Selection.PickPoint("Pick a point along the pipe centerline")
+    curve = host_part.Location.Curve
+    result = curve.Project(picked_point)
+    if result is None:
+        raise Exception("Could not project picked point onto pipe centerline.")
+    return result.XYZPoint
+
 def is_3d_view(view):
     return view.ViewType == ViewType.ThreeD
 
 # -----------------------------
-# ROTATION UTILITIES
+# ROTATION
 # -----------------------------
 def rotate_to_vector(doc, element, origin, from_vec, to_vec):
     from_vec = from_vec.Normalize()
@@ -136,55 +174,35 @@ def rotate_to_vector(doc, element, origin, from_vec, to_vec):
     ElementTransformUtils.RotateElement(doc, element.Id, rot_line, angle)
 
 # -----------------------------
-# POINT CONVERTER
+# WALL SLEEVE END-POINT HELPERS
 # -----------------------------
-class PointConverter:
-    """Convert coordinates between internal / project / survey systems."""
-    def __init__(self, x, y, z, coord_sys='internal', doc=None):
-        if doc is None:
-            doc = __revit__.ActiveUIDocument.Document
-        self.doc = doc
-        pt = XYZ(x, y, z)
+def get_part_connectors(part):
+    try:
+        return list(part.ConnectorManager.Connectors)
+    except:
+        return []
 
-        srv_trans = self._get_survey_transform()
-        proj_trans = self._get_project_transform()
-
-        if coord_sys.lower() == 'internal':
-            self.internal = pt
-            self.survey   = srv_trans.Inverse.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(pt)
-        elif coord_sys.lower() == 'project':
-            self.project  = pt
-            self.internal = proj_trans.OfPoint(pt)
-            self.survey   = srv_trans.Inverse.OfPoint(self.internal)
-        elif coord_sys.lower() == 'survey':
-            self.survey   = pt
-            self.internal = srv_trans.OfPoint(pt)
-            self.project  = proj_trans.Inverse.OfPoint(self.internal)
-        else:
-            raise ValueError("coord_sys must be 'internal', 'project' or 'survey'")
-
-    def _get_survey_transform(self):
-        return self.doc.ActiveProjectLocation.GetTotalTransform()
-
-    def _get_project_transform(self):
-        collector = FilteredElementCollector(self.doc).OfClass(ProjectLocation).WhereElementIsNotElementType()
-        for loc in collector:
-            if loc.Name == "Project":
-                return loc.GetTotalTransform()
-        return Transform.Identity
-
-def is_vertical_pipe(pipe):
-    if pipe.ItemCustomId != 2041:
-        return False
-    conns = list(pipe.ConnectorManager.Connectors)
+def get_end_connector_point(part, direction_vec):
+    conns = get_part_connectors(part)
     if len(conns) < 2:
-        return False
-    direction = (conns[1].Origin - conns[0].Origin).Normalize()
-    return abs(direction.Z) > 0.99
+        return part.Origin
+
+    # Use connector with smallest projection along direction_vec
+    # so picked point becomes the "start/end" and sleeve extends forward
+    best_conn = None
+    best_val = None
+
+    for c in conns:
+        pt = c.Origin
+        val = pt.X * direction_vec.X + pt.Y * direction_vec.Y + pt.Z * direction_vec.Z
+        if best_conn is None or val < best_val:
+            best_conn = c
+            best_val = val
+
+    return best_conn.Origin
 
 # -----------------------------
-# INTERSECTION CALC
+# LEVEL INTERSECTIONS
 # -----------------------------
 def get_pipe_intersections(pipe, levels):
     curve = pipe.Location.Curve
@@ -192,7 +210,6 @@ def get_pipe_intersections(pipe, levels):
     p1 = curve.GetEndPoint(1)
 
     intersection_data = []
-
     dz = (p1.Z - p0.Z)
     if abs(dz) < 1e-6:
         return []
@@ -200,7 +217,6 @@ def get_pipe_intersections(pipe, levels):
     for level in levels:
         z = level.Elevation
         t = (z - p0.Z) / dz
-
         if 0.0 <= t <= 1.0:
             pt = p0 + (p1 - p0) * t
             intersection_data.append((pt, level))
@@ -218,58 +234,56 @@ def align_top_to_point(doc, part, target_point):
     ElementTransformUtils.MoveElement(doc, part.Id, move_vec)
 
 # -----------------------------
-# DUPLICATE DETECTION
+# SELECTION FILTER
 # -----------------------------
-def is_duplicate_sleeve(point, existing_parts, tol=0.02):
-    for el in existing_parts:
+class FabricationStraightSelectionFilter(ISelectionFilter):
+    def AllowElement(self, elem):
         try:
-            loc = el.Origin  # FabricationPart uses Origin
-            if loc and all(abs(a - b) < tol for a, b in zip(
-                (loc.X, loc.Y, loc.Z),
-                (point.X, point.Y, point.Z)
-            )):
-                return True
+            return isinstance(elem, FabricationPart) and isinstance(elem.Location, LocationCurve)
         except:
-            continue
-    return False
+            return False
+    def AllowReference(self, reference, point):
+        return False
 
 # -----------------------------
-# GET PRE-SELECTED OR VIEW PIPES
+# HOST COLLECTION FOR FLOOR MODE
 # -----------------------------
-selected_ids = uidoc.Selection.GetElementIds()
-host_parts = []
+def collect_vertical_hosts():
+    selected_ids = uidoc.Selection.GetElementIds()
+    host_parts = []
 
-if selected_ids.Count > 0:
-    # Pre-selection mode
-    for eid in selected_ids:
-        element = doc.GetElement(eid)
-        if isinstance(element, FabricationPart) and isinstance(element.Location, LocationCurve):
-            host_parts.append(element)
-    
-    if not host_parts:
-        TaskDialog.Show("Error", "No valid fabrication pipes in selection.")
-        sys.exit()
-else:
-    # Default mode - all visible in current view
-    curview = doc.ActiveView
-    is_3d = curview.ViewType == ViewType.ThreeD
-    is_plan = curview.ViewType == ViewType.FloorPlan
-    
-    if not is_3d and not is_plan:
-        TaskDialog.Show("Error", "This script supports 3D and Floor Plan views only.")
-        sys.exit()
-    
-    visible_pipes = FilteredElementCollector(doc, curview.Id)\
-                    .OfCategory(BuiltInCategory.OST_FabricationPipework)\
-                    .WhereElementIsNotElementType().ToElements()
-    
-    for pipe in visible_pipes:
-        if isinstance(pipe, FabricationPart) and isinstance(pipe.Location, LocationCurve):
-            host_parts.append(pipe)
-    
-    if not host_parts:
-        TaskDialog.Show("Info", "No fabrication pipes found in current view.")
-        sys.exit()
+    if selected_ids.Count > 0:
+        for eid in selected_ids:
+            element = doc.GetElement(eid)
+            if isinstance(element, FabricationPart) and isinstance(element.Location, LocationCurve):
+                host_parts.append(element)
+
+        if not host_parts:
+            TaskDialog.Show("Error", "No valid fabrication pipes in selection.")
+            sys.exit()
+    else:
+        curview = doc.ActiveView
+        is_3d = curview.ViewType == ViewType.ThreeD
+        is_plan = curview.ViewType == ViewType.FloorPlan
+
+        if not is_3d and not is_plan:
+            TaskDialog.Show("Error", "This script supports 3D and Floor Plan views only.")
+            sys.exit()
+
+        visible_pipes = FilteredElementCollector(doc, curview.Id) \
+            .OfCategory(BuiltInCategory.OST_FabricationPipework) \
+            .WhereElementIsNotElementType() \
+            .ToElements()
+
+        for pipe in visible_pipes:
+            if isinstance(pipe, FabricationPart) and isinstance(pipe.Location, LocationCurve):
+                host_parts.append(pipe)
+
+        if not host_parts:
+            TaskDialog.Show("Info", "No fabrication pipes found in current view.")
+            sys.exit()
+
+    return host_parts
 
 # -----------------------------
 # GET SERVICE & BUTTONS
@@ -278,13 +292,10 @@ config = FabricationConfiguration.GetFabricationConfiguration(doc)
 services = config.GetAllLoadedServices()
 target_service = None
 
-target_service = None
-
 for s in services:
     if s.Name and 'sleeves' in s.Name.lower():
         target_service = s
         break
-        
 
 if not target_service:
     TaskDialog.Show("Error", "Could not find a Fabrication Service name containing 'Sleeve'.")
@@ -292,14 +303,17 @@ if not target_service:
 
 palette_names = []
 button_records = []
+
 for p in range(target_service.PaletteCount):
     palette_name = target_service.GetPaletteName(p)
     palette_names.append(palette_name)
+
     for i in range(target_service.GetButtonCount(p)):
         btn = target_service.GetButton(p, i)
+
         if btn.ConditionCount > 1:
             for c in range(btn.ConditionCount):
-                display = u"{1}".format(btn.Name, btn.GetConditionName(c))
+                display = u"{} - {}".format(btn.Name, btn.GetConditionName(c))
                 button_records.append({
                     "palette_index": p,
                     "palette_name": palette_name,
@@ -308,7 +322,7 @@ for p in range(target_service.PaletteCount):
                     "condition_index": c
                 })
         else:
-            display = u"{0}".format(btn.Name)
+            display = u"{}".format(btn.Name)
             button_records.append({
                 "palette_index": p,
                 "palette_name": palette_name,
@@ -318,7 +332,7 @@ for p in range(target_service.PaletteCount):
             })
 
 if not button_records:
-    TaskDialog.Show("Error", "No fabrication buttons found for the 'Plumbing: Sleeves' service.")
+    TaskDialog.Show("Error", "No fabrication buttons found for the sleeve service.")
     sys.exit()
 
 # -----------------------------
@@ -411,63 +425,113 @@ if not dlg.ShowDialog():
 selected_record = dlg.selected_record
 fab_btn = selected_record["button"]
 condition_index = selected_record["condition_index"]
+is_wall_mode = "wall" in selected_record["display"].lower()
 
 # -----------------------------
-# CREATE PART + MOVE + ROTATE
+# MAIN
 # -----------------------------
 t = None
+
 try:
-    t = Transaction(doc, "Place Fabrication Sleeves at Level Intersections")
+    t = Transaction(doc, "Place Fabrication Sleeves")
     t.Start()
 
-    all_levels = list(FilteredElementCollector(doc).OfClass(Level))
-    placed_count = 0
+    if is_wall_mode:
+        # ---------------------------------
+        # WALL SLEEVE MODE
+        # picked point = sleeve END
+        # sleeve stays flat
+        # ---------------------------------
+        straight_filter = FabricationStraightSelectionFilter()
 
-    for host_part in host_parts:
         try:
-            new_diameter = get_mapped_sleeve_diameter_feet(host_part)
-        except:
-            continue
-
-        intersections = get_pipe_intersections(host_part, all_levels)
-        if not intersections:
-            continue
-
-        pipe_dir = get_pipe_direction(host_part)
-
-        for pt, level in intersections:
-            new_part = FabricationPart.Create(
-                doc,
-                fab_btn,
-                condition_index,
-                level.Id
+            ref = uidoc.Selection.PickObject(
+                ObjectType.Element,
+                straight_filter,
+                "Select fabrication pipe/straight for wall sleeve"
             )
+        except OperationCanceledException:
+            t.RollBack()
+            sys.exit()
 
-            doc.Regenerate()
+        host_part = doc.GetElement(ref.ElementId)
 
-            size_param = new_part.LookupParameter("Main Primary Diameter")
-            if size_param and not size_param.IsReadOnly:
-                size_param.Set(new_diameter)
+        try:
+            if is_3d_view(doc.ActiveView):
+                insert_point = get_pipe_midpoint(host_part)
+            else:
+                insert_point = get_projected_insert_point(host_part)
+        except OperationCanceledException:
+            t.RollBack()
+            sys.exit()
+        except Exception as ex:
+            t.RollBack()
+            TaskDialog.Show("Error", str(ex))
+            sys.exit()
 
-            length_param = new_part.LookupParameter("Length")
-            if length_param and not length_param.IsReadOnly:
-                length_param.Set(sleeve_length)
+        flat_pipe_dir = get_horizontal_pipe_direction(host_part)
 
-            move_vec = pt - new_part.Origin
-            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+        new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
+        doc.Regenerate()
 
-            rotate_to_vector(doc, new_part, pt, XYZ.BasisX, pipe_dir.Multiply(-1))
+        set_part_size_and_length(new_part, host_part)
+        doc.Regenerate()
 
-            doc.Regenerate()
+        # Rotate first so connector/end logic is based on final direction
+        rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
+        doc.Regenerate()
 
-            align_top_to_point(doc, new_part, pt)
+        # Move so picked point aligns to sleeve END, not center
+        end_point = get_end_connector_point(new_part, flat_pipe_dir)
+        move_vec = insert_point - end_point
+        ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+        doc.Regenerate()
 
-            placed_count += 1
+    else:
+        # ---------------------------------
+        # FLOOR / VERTICAL SLEEVE MODE
+        # ---------------------------------
+        host_parts = collect_vertical_hosts()
+        all_levels = list(FilteredElementCollector(doc).OfClass(Level))
+        placed_count = 0
 
-    if placed_count == 0:
-        TaskDialog.Show("Info", "No sleeves were placed.")
-        t.RollBack()
-        sys.exit()
+        for host_part in host_parts:
+            try:
+                intersections = get_pipe_intersections(host_part, all_levels)
+                if not intersections:
+                    continue
+
+                pipe_dir = get_pipe_direction(host_part)
+
+                for pt, level in intersections:
+                    new_part = FabricationPart.Create(
+                        doc,
+                        fab_btn,
+                        condition_index,
+                        level.Id
+                    )
+
+                    doc.Regenerate()
+
+                    set_part_size_and_length(new_part, host_part)
+                    doc.Regenerate()
+
+                    move_vec = pt - new_part.Origin
+                    ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+
+                    rotate_to_vector(doc, new_part, pt, XYZ.BasisX, pipe_dir.Multiply(-1))
+                    doc.Regenerate()
+
+                    align_top_to_point(doc, new_part, pt)
+                    placed_count += 1
+
+            except:
+                continue
+
+        if placed_count == 0:
+            TaskDialog.Show("Info", "No sleeves were placed.")
+            t.RollBack()
+            sys.exit()
 
     t.Commit()
 
