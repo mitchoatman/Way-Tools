@@ -142,11 +142,24 @@ def get_pipe_midpoint(host_part):
 
 def get_projected_insert_point(host_part):
     picked_point = uidoc.Selection.PickPoint("Pick a point along the pipe centerline")
+
     curve = host_part.Location.Curve
-    result = curve.Project(picked_point)
-    if result is None:
-        raise Exception("Could not project picked point onto pipe centerline.")
-    return result.XYZPoint
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+
+    # Plan-based projection only to prevent drift on sloped pipes
+    v2d = XYZ(p1.X - p0.X, p1.Y - p0.Y, 0.0)
+    w2d = XYZ(picked_point.X - p0.X, picked_point.Y - p0.Y, 0.0)
+
+    v2d_len_sq = v2d.DotProduct(v2d)
+    if v2d_len_sq < 1e-8:
+        raise Exception("Pipe is vertical or too close to vertical for plan-based point projection.")
+
+    t = w2d.DotProduct(v2d) / v2d_len_sq
+    t = max(0.0, min(1.0, t))
+
+    # Rebuild true 3D point on actual sloped pipe
+    return p0 + (p1 - p0).Multiply(t)
 
 def is_3d_view(view):
     return view.ViewType == ViewType.ThreeD
@@ -187,8 +200,6 @@ def get_end_connector_point(part, direction_vec):
     if len(conns) < 2:
         return part.Origin
 
-    # Use connector with smallest projection along direction_vec
-    # so picked point becomes the "start/end" and sleeve extends forward
     best_conn = None
     best_val = None
 
@@ -501,7 +512,7 @@ try:
                 if not intersections:
                     continue
 
-                pipe_dir = get_pipe_direction(host_part)
+                    pipe_dir = get_pipe_direction(host_part)
 
                 for pt, level in intersections:
                     new_part = FabricationPart.Create(
