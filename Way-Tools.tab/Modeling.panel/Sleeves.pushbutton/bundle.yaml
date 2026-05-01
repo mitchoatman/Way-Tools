@@ -12,7 +12,7 @@ tooltip: |-
   Floorplan View - sleeves are placed on level above.
   3D View - visible pipes crossing level lines are populated with sleeves.
   
-  Pre-Selected - sleeves are placed on the selected element(s) only.
+  Pre-Selected - floor sleeves are placed on the selected element(s) only.
 
 # context directives are listed under `context` key, the order does not matter
 #context:
