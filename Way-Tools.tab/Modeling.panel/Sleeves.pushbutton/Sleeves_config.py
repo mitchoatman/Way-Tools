@@ -199,8 +199,26 @@ class LinkedWallSelectionFilter(ISelectionFilter):
             return False
 
 # -----------------------------
-# LINKED WALL HELPERS
+# SELECTION HELPERS
 # -----------------------------
+def select_fabrication_pipes():
+    refs = uidoc.Selection.PickObjects(
+        ObjectType.Element,
+        FabricationStraightSelectionFilter(),
+        "Select one or more fabrication pipes/straights for wall sleeves, then click Finish"
+    )
+
+    pipes = []
+    for r in refs:
+        elem = doc.GetElement(r.ElementId)
+        if elem:
+            pipes.append(elem)
+
+    if not pipes:
+        raise Exception("No fabrication pipes were selected.")
+
+    return pipes
+
 def select_linked_wall():
     return uidoc.Selection.PickObject(
         ObjectType.LinkedElement,
@@ -208,6 +226,9 @@ def select_linked_wall():
         "Select a wall in a Revit link"
     )
 
+# -----------------------------
+# LINKED WALL HELPERS
+# -----------------------------
 def get_linked_wall_thickness_and_curve(link_ref):
     link_instance = doc.GetElement(link_ref.ElementId)
     if link_instance is None:
@@ -314,7 +335,6 @@ button_records = []
 
 for p in range(target_service.PaletteCount):
     palette_name = target_service.GetPaletteName(p)
-
     local_records = []
 
     for i in range(target_service.GetButtonCount(p)):
@@ -392,7 +412,7 @@ class PartPicker(Window):
         stack.Children.Add(self.search_box)
 
         lbl_instr = Label()
-        lbl_instr.Content = "Double Click Item to Insert"
+        lbl_instr.Content = "Double Click Item to Select"
         lbl_instr.Margin = Thickness(0, 0, 0, 5)
         stack.Children.Add(lbl_instr)
 
@@ -447,46 +467,61 @@ condition_index = selected_record["condition_index"]
 # MAIN
 # -----------------------------
 t = None
+failed = []
+placed_count = 0
 
 try:
-    straight_filter = FabricationStraightSelectionFilter()
-
     try:
-        ref = uidoc.Selection.PickObject(
-            ObjectType.Element,
-            straight_filter,
-            "Select fabrication pipe/straight for wall sleeve"
-        )
+        host_parts = select_fabrication_pipes()
     except OperationCanceledException:
         sys.exit()
-
-    host_part = doc.GetElement(ref.ElementId)
 
     try:
         wall_ref = select_linked_wall()
     except OperationCanceledException:
         sys.exit()
 
-    t = Transaction(doc, "Place Fabrication Wall Sleeve")
+    t = Transaction(doc, "Place Fabrication Wall Sleeves")
     t.Start()
 
-    insert_point, wall_length, flat_pipe_dir = get_wall_sleeve_data_from_link(host_part, wall_ref)
+    for host_part in host_parts:
+        try:
+            insert_point, wall_length, flat_pipe_dir = get_wall_sleeve_data_from_link(host_part, wall_ref)
 
-    new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
-    doc.Regenerate()
+            new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
+            doc.Regenerate()
 
-    set_part_size_and_length(new_part, host_part, wall_length)
-    doc.Regenerate()
+            set_part_size_and_length(new_part, host_part, wall_length)
+            doc.Regenerate()
 
-    rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
-    doc.Regenerate()
+            rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
+            doc.Regenerate()
 
-    end_point = get_end_connector_point(new_part, flat_pipe_dir)
-    move_vec = insert_point - end_point
-    ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
-    doc.Regenerate()
+            end_point = get_end_connector_point(new_part, flat_pipe_dir)
+            move_vec = insert_point - end_point
+            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+            doc.Regenerate()
+
+            placed_count += 1
+
+        except Exception as pipe_error:
+            try:
+                failed.append("Pipe {}: {}".format(host_part.Id.IntegerValue, str(pipe_error)))
+            except:
+                failed.append(str(pipe_error))
+
+    if placed_count == 0:
+        t.RollBack()
+        TaskDialog.Show("Wall Sleeve Placement", "No sleeves were placed.\n\n{}".format("\n".join(failed[:20])))
+        sys.exit()
 
     t.Commit()
+
+    if failed:
+        TaskDialog.Show(
+            "Wall Sleeve Placement",
+            "Placed {} sleeve(s) with some issues.\n\n{}".format(placed_count, "\n".join(failed[:20]))
+        )
 
 except Exception as ex:
     if t and t.HasStarted() and not t.HasEnded():
