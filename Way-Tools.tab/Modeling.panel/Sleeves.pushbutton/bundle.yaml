@@ -14,6 +14,12 @@ tooltip: |-
   
   Pre-Selected - floor sleeves are placed on the selected element(s) only.
 
+  [Shift]+Click:    
+  Place Wall sleeve parts on pipe centerline at selected linked wall location.
+    1. Choose Sleeve from dialog.
+    2. Pick Fabrication Pipe.
+    3. Pick linked wall.
+
 # context directives are listed under `context` key, the order does not matter
 #context:
 #  - Selection
