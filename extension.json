@@ -3,12 +3,12 @@
     "default_enabled": "True",
     "type": "extension",
     "rocket_mode_compatible": "True",
-    "name": "CAE-Tools",
-    "description": "Control Air Custom Revit Tools",
-    "author": "Kenneth Boentoro",
+    "name": "Way-Tools",
+    "description": "Way Engineering Custom Revit Tools",
+    "author": "Josh Oatman",
     "author_profile": "",
     "url": "https://github.com/mitchoatman/CAE-Tools.git",
-    "website": "https://murraycompany.com",
+    "website": "https://www.wayeng.com/",
     "image": "",
     "dependencies": []
 }
