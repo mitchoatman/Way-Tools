@@ -253,14 +253,13 @@ def get_linked_wall_thickness_and_curve(link_ref):
     thickness = wall.WallType.Width
     return thickness, wall_curve_host
 
-def project_wall_curve_to_pipe_plane(wall_curve, pipe_curve):
-    pipe_start = pipe_curve.GetEndPoint(0)
-    pipe_end = pipe_curve.GetEndPoint(1)
-    pipe_direction = (pipe_end - pipe_start).Normalize()
-
-    plane_normal = XYZ(0, 0, 1)
-    if abs(pipe_direction.Z) > 0.99:
-        plane_normal = XYZ(1, 0, 0)
+def project_curve_to_xy(curve):
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+    return Line.CreateBound(
+        XYZ(p0.X, p0.Y, 0.0),
+        XYZ(p1.X, p1.Y, 0.0)
+    )
 
     plane = Plane.CreateByNormalAndOrigin(plane_normal, pipe_start)
 
@@ -283,27 +282,34 @@ def get_wall_sleeve_data_from_link(host_part, link_ref):
     pipe_curve = host_part.Location.Curve
     wall_thickness, wall_curve = get_linked_wall_thickness_and_curve(link_ref)
 
-    projected_wall_curve = project_wall_curve_to_pipe_plane(wall_curve, pipe_curve)
+    pipe_p0 = pipe_curve.GetEndPoint(0)
+    pipe_p1 = pipe_curve.GetEndPoint(1)
+
+    pipe_xy = project_curve_to_xy(pipe_curve)
+    wall_xy = project_curve_to_xy(wall_curve)
 
     result_array = clr.Reference[IntersectionResultArray]()
-    result = pipe_curve.Intersect(projected_wall_curve, result_array)
+    result = pipe_xy.Intersect(wall_xy, result_array)
 
     if result != SetComparisonResult.Overlap or not result_array.Value or result_array.Value.Size == 0:
-        raise Exception("Pipe does not intersect the selected linked wall.")
+        raise Exception("Pipe does not intersect the selected linked wall in plan.")
 
-    intersection_point = result_array.Value[0].XYZPoint
+    intersection_xy = result_array.Value[0].XYZPoint
 
-    p0 = pipe_curve.GetEndPoint(0)
-    p1 = pipe_curve.GetEndPoint(1)
+    v2d = XYZ(pipe_p1.X - pipe_p0.X, pipe_p1.Y - pipe_p0.Y, 0.0)
+    w2d = XYZ(intersection_xy.X - pipe_p0.X, intersection_xy.Y - pipe_p0.Y, 0.0)
 
-    if p0.DistanceTo(intersection_point) <= p1.DistanceTo(intersection_point):
-        near_pt = p0
-        far_pt = p1
-    else:
-        near_pt = p1
-        far_pt = p0
+    v2d_len_sq = v2d.DotProduct(v2d)
+    if v2d_len_sq < 1e-8:
+        raise Exception("Host pipe is vertical or too close to vertical for wall sleeve placement.")
 
-    flat_dir = XYZ(far_pt.X - near_pt.X, far_pt.Y - near_pt.Y, 0.0)
+    t = w2d.DotProduct(v2d) / v2d_len_sq
+    t = max(0.0, min(1.0, t))
+
+    # rebuild the true 3D intersection point on the actual sloped pipe
+    intersection_point = pipe_p0 + (pipe_p1 - pipe_p0).Multiply(t)
+
+    flat_dir = XYZ(pipe_p1.X - pipe_p0.X, pipe_p1.Y - pipe_p0.Y, 0.0)
     if flat_dir.GetLength() < 1e-8:
         raise Exception("Host pipe is vertical or too close to vertical for wall sleeve placement.")
 
