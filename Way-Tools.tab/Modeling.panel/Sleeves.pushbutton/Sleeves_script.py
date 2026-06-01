@@ -96,7 +96,7 @@ def get_mapped_sleeve_diameter_feet(host_part):
 
     return 2.0 / 12.0
 
-def set_part_size_and_length(new_part, host_part):
+def set_round_part_size_and_length(new_part, host_part):
     try:
         new_diameter = get_mapped_sleeve_diameter_feet(host_part)
         size_param = new_part.LookupParameter("Main Primary Diameter")
@@ -271,6 +271,155 @@ def get_end_connector_point(part, direction_vec):
     return best_conn.Origin
 
 # -----------------------------
+# RECTANGULAR WALL SLEEVE HELPERS
+# -----------------------------
+
+def round_up_feet_to_next_inch(value_feet):
+    return math.ceil(value_feet * 12.0) / 12.0
+
+class FabricationPipeSelectionFilter(ISelectionFilter):
+    def AllowElement(self, elem):
+        try:
+            return isinstance(elem, FabricationPart) and isinstance(elem.Location, LocationCurve)
+        except:
+            return False
+
+    def AllowReference(self, reference, point):
+        return False
+
+def get_part_insulation_thickness(part):
+    try:
+        if hasattr(part, "HasInsulation") and part.HasInsulation:
+            return part.InsulationThickness
+    except:
+        pass
+    return 0.0
+
+def get_bbox_corners(bb):
+    return [
+        XYZ(bb.Min.X, bb.Min.Y, bb.Min.Z),
+        XYZ(bb.Min.X, bb.Min.Y, bb.Max.Z),
+        XYZ(bb.Min.X, bb.Max.Y, bb.Min.Z),
+        XYZ(bb.Min.X, bb.Max.Y, bb.Max.Z),
+        XYZ(bb.Max.X, bb.Min.Y, bb.Min.Z),
+        XYZ(bb.Max.X, bb.Min.Y, bb.Max.Z),
+        XYZ(bb.Max.X, bb.Max.Y, bb.Min.Z),
+        XYZ(bb.Max.X, bb.Max.Y, bb.Max.Z)
+    ]
+
+def get_parallel_horizontal_direction(parts):
+    if not parts:
+        raise Exception("No pipes selected.")
+
+    base_dir = get_horizontal_pipe_direction(parts[0])
+
+    for part in parts[1:]:
+        test_dir = get_horizontal_pipe_direction(part)
+        dot = abs(base_dir.DotProduct(test_dir))
+        if dot < 0.99:
+            raise Exception("All selected pipes must be parallel and horizontal for Rectangular Wall Sleeve.")
+
+    return base_dir
+
+def get_rect_wall_group_data(parts):
+    if not parts:
+        raise Exception("No fabrication pipes selected.")
+
+    run_dir = get_parallel_horizontal_direction(parts)
+    side_dir = XYZ.BasisZ.CrossProduct(run_dir).Normalize()
+
+    min_side = None
+    max_side = None
+    min_z = None
+    max_z = None
+
+    for part in parts:
+        bb = part.get_BoundingBox(None)
+        if bb is None:
+            continue
+
+        corners = get_bbox_corners(bb)
+        ins = get_part_insulation_thickness(part)
+
+        side_vals = [pt.DotProduct(side_dir) for pt in corners]
+        z_vals = [pt.Z for pt in corners]
+
+        part_min_side = min(side_vals) - ins
+        part_max_side = max(side_vals) + ins
+        part_min_z = min(z_vals) - ins
+        part_max_z = max(z_vals) + ins
+
+        if min_side is None:
+            min_side = part_min_side
+            max_side = part_max_side
+            min_z = part_min_z
+            max_z = part_max_z
+        else:
+            min_side = min(min_side, part_min_side)
+            max_side = max(max_side, part_max_side)
+            min_z = min(min_z, part_min_z)
+            max_z = max(max_z, part_max_z)
+
+    if min_side is None:
+        raise Exception("Could not calculate combined bounding box for selected pipes.")
+
+    return {
+        "run_dir": run_dir,
+        "side_dir": side_dir,
+        "width": max_side - min_side,
+        "depth": max_z - min_z,
+        "center_side": (min_side + max_side) / 2.0,
+        "center_z": (min_z + max_z) / 2.0
+    }
+
+def get_rect_wall_insert_point(parts, group_data):
+    picked_point = uidoc.Selection.PickPoint("Pick a point along the pipe run for rectangular wall sleeve")
+
+    run_dir = group_data["run_dir"]
+    side_dir = group_data["side_dir"]
+    center_side = group_data["center_side"]
+    center_z = group_data["center_z"]
+
+    curve = parts[0].Location.Curve
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+
+    s_pick = picked_point.X * run_dir.X + picked_point.Y * run_dir.Y
+    s0 = p0.X * run_dir.X + p0.Y * run_dir.Y
+    s1 = p1.X * run_dir.X + p1.Y * run_dir.Y
+
+    s_min = min(s0, s1)
+    s_max = max(s0, s1)
+    s = max(s_min, min(s_pick, s_max))
+
+    return run_dir.Multiply(s) + side_dir.Multiply(center_side) + XYZ.BasisZ.Multiply(center_z)
+
+def set_rect_wall_size_and_length(new_part, group_data):
+    rounded_width = round_up_feet_to_next_inch(group_data["width"])
+    rounded_depth = round_up_feet_to_next_inch(group_data["depth"])
+
+    try:
+        width_param = new_part.LookupParameter("Main Primary Width")
+        if width_param and not width_param.IsReadOnly:
+            width_param.Set(rounded_width)
+    except:
+        pass
+
+    try:
+        depth_param = new_part.LookupParameter("Main Primary Depth")
+        if depth_param and not depth_param.IsReadOnly:
+            depth_param.Set(rounded_depth)
+    except:
+        pass
+
+    try:
+        length_param = new_part.LookupParameter("Length")
+        if length_param and not length_param.IsReadOnly:
+            length_param.Set(sleeve_length)
+    except:
+        pass
+
+# -----------------------------
 # LEVEL INTERSECTIONS
 # -----------------------------
 def get_pipe_intersections(pipe, levels):
@@ -322,6 +471,7 @@ class FabricationStraightSelectionFilter(ISelectionFilter):
             return isinstance(elem, FabricationPart) and isinstance(elem.Location, LocationCurve)
         except:
             return False
+
     def AllowReference(self, reference, point):
         return False
 
@@ -505,7 +655,10 @@ if not dlg.ShowDialog():
 selected_record = dlg.selected_record
 fab_btn = selected_record["button"]
 condition_index = selected_record["condition_index"]
-is_wall_mode = "wall" in selected_record["display"].lower()
+
+display_name = selected_record["display"].lower()
+is_wall_mode = "wall" in display_name
+is_rectangular_wall_mode = "rectangular wall sleeve" in display_name
 
 # -----------------------------
 # MAIN
@@ -519,53 +672,98 @@ try:
     if is_wall_mode:
         # ---------------------------------
         # WALL SLEEVE MODE
-        # picked point = sleeve END
-        # sleeve stays flat
         # ---------------------------------
-        straight_filter = FabricationStraightSelectionFilter()
+        if is_rectangular_wall_mode:
+            pipe_filter = FabricationPipeSelectionFilter()
 
-        try:
-            ref = uidoc.Selection.PickObject(
-                ObjectType.Element,
-                straight_filter,
-                "Select fabrication pipe/straight for wall sleeve"
-            )
-        except OperationCanceledException:
-            t.RollBack()
-            sys.exit()
+            try:
+                refs = uidoc.Selection.PickObjects(
+                    ObjectType.Element,
+                    pipe_filter,
+                    "Select fabrication pipe(s) for rectangular wall sleeve"
+                )
+            except OperationCanceledException:
+                t.RollBack()
+                sys.exit()
 
-        host_part = doc.GetElement(ref.ElementId)
+            host_parts = [doc.GetElement(r.ElementId) for r in refs]
+            if not host_parts:
+                t.RollBack()
+                sys.exit()
 
-        try:
-            if is_3d_view(doc.ActiveView):
-                insert_point = get_pipe_midpoint(host_part)
-            else:
-                insert_point = get_projected_insert_point(host_part)
-        except OperationCanceledException:
-            t.RollBack()
-            sys.exit()
-        except Exception as ex:
-            t.RollBack()
-            TaskDialog.Show("Error", str(ex))
-            sys.exit()
+            try:
+                group_data = get_rect_wall_group_data(host_parts)
+                insert_point = get_rect_wall_insert_point(host_parts, group_data)
+            except OperationCanceledException:
+                t.RollBack()
+                sys.exit()
+            except Exception as ex:
+                t.RollBack()
+                TaskDialog.Show("Error", str(ex))
+                sys.exit()
 
-        flat_pipe_dir = get_horizontal_pipe_direction(host_part)
+            new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_parts[0].LevelId)
+            doc.Regenerate()
 
-        new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
-        doc.Regenerate()
+            set_rect_wall_size_and_length(new_part, group_data)
+            doc.Regenerate()
 
-        set_part_size_and_length(new_part, host_part)
-        doc.Regenerate()
+            rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, group_data["run_dir"])
+            doc.Regenerate()
 
-        # Rotate first so connector/end logic is based on final direction
-        rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
-        doc.Regenerate()
+            end_point = get_end_connector_point(new_part, group_data["run_dir"])
+            move_vec = insert_point - end_point
+            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+            doc.Regenerate()
 
-        # Move so picked point aligns to sleeve END, not center
-        end_point = get_end_connector_point(new_part, flat_pipe_dir)
-        move_vec = insert_point - end_point
-        ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
-        doc.Regenerate()
+        else:
+            # ---------------------------------
+            # ROUND / EXISTING WALL SLEEVE MODE
+            # picked point = sleeve END
+            # sleeve stays flat
+            # ---------------------------------
+            straight_filter = FabricationStraightSelectionFilter()
+
+            try:
+                ref = uidoc.Selection.PickObject(
+                    ObjectType.Element,
+                    straight_filter,
+                    "Select fabrication pipe/straight for wall sleeve"
+                )
+            except OperationCanceledException:
+                t.RollBack()
+                sys.exit()
+
+            host_part = doc.GetElement(ref.ElementId)
+
+            try:
+                if is_3d_view(doc.ActiveView):
+                    insert_point = get_pipe_midpoint(host_part)
+                else:
+                    insert_point = get_projected_insert_point(host_part)
+            except OperationCanceledException:
+                t.RollBack()
+                sys.exit()
+            except Exception as ex:
+                t.RollBack()
+                TaskDialog.Show("Error", str(ex))
+                sys.exit()
+
+            flat_pipe_dir = get_horizontal_pipe_direction(host_part)
+
+            new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
+            doc.Regenerate()
+
+            set_round_part_size_and_length(new_part, host_part)
+            doc.Regenerate()
+
+            rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
+            doc.Regenerate()
+
+            end_point = get_end_connector_point(new_part, flat_pipe_dir)
+            move_vec = insert_point - end_point
+            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+            doc.Regenerate()
 
     else:
         # ---------------------------------
@@ -593,7 +791,7 @@ try:
 
                     doc.Regenerate()
 
-                    set_part_size_and_length(new_part, host_part)
+                    set_round_part_size_and_length(new_part, host_part)
                     doc.Regenerate()
 
                     move_vec = pt - new_part.Origin
