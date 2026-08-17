@@ -62,14 +62,18 @@ def load_service_settings(path):
     with open(path, 'r') as f:
         for line in f:
             line = line.strip()
-            if "=" not in line: continue
+            if "=" not in line:
+                continue
             parts = line.split("=", 1)
-            if len(parts) != 2: continue
+            if len(parts) != 2:
+                continue
 
             key = parts[0].strip()
             val_string = parts[1].strip()
             rules = []
-            
+
+            # Old single-rule format: hanger|spacing|joints
+            # New single-rule format: hanger|spacing|dist_from_end|joints
             if ":" not in val_string:
                 vals = val_string.split("|")
                 if len(vals) == 3:
@@ -78,23 +82,51 @@ def load_service_settings(path):
                             "size": 999.0,
                             "hanger": vals[0].strip(),
                             "spacing": float(vals[1].strip()),
+                            "dist_from_end": 1.0,
                             "joints": vals[2].strip().lower() == "true"
                         })
-                    except: pass
+                    except:
+                        pass
+                elif len(vals) == 4:
+                    try:
+                        rules.append({
+                            "size": 999.0,
+                            "hanger": vals[0].strip(),
+                            "spacing": float(vals[1].strip()),
+                            "dist_from_end": float(vals[2].strip()),
+                            "joints": vals[3].strip().lower() == "true"
+                        })
+                    except:
+                        pass
             else:
                 rule_strings = val_string.split("|")
                 for rs in rule_strings:
                     r_parts = rs.split(":")
+                    # Old rule format: size:hanger:spacing:joints
                     if len(r_parts) == 4:
                         try:
                             rules.append({
                                 "size": float(r_parts[0].strip()),
                                 "hanger": r_parts[1].strip(),
                                 "spacing": float(r_parts[2].strip()),
+                                "dist_from_end": 1.0,
                                 "joints": r_parts[3].strip().lower() == "true"
                             })
-                        except: pass
-                        
+                        except:
+                            pass
+                    # New rule format: size:hanger:spacing:dist_from_end:joints
+                    elif len(r_parts) == 5:
+                        try:
+                            rules.append({
+                                "size": float(r_parts[0].strip()),
+                                "hanger": r_parts[1].strip(),
+                                "spacing": float(r_parts[2].strip()),
+                                "dist_from_end": float(r_parts[3].strip()),
+                                "joints": r_parts[4].strip().lower() == "true"
+                            })
+                        except:
+                            pass
+
             if rules:
                 rules.sort(key=lambda x: x["size"])
                 settings[key] = rules
@@ -162,14 +194,24 @@ def get_rule_for_element(elem, settings):
                 break
 
     if not rules:
-        return "--- NONE ---", 10.0, True
+        return "--- NONE ---", 10.0, 1.0, True
     
     for rule in rules:
         if size_inches <= rule["size"]:
-            return rule["hanger"], rule["spacing"], rule["joints"]
+            return (
+                rule["hanger"],
+                rule["spacing"],
+                rule.get("dist_from_end", 1.0),
+                rule["joints"]
+            )
             
     last_rule = rules[-1]
-    return last_rule["hanger"], last_rule["spacing"], last_rule["joints"]
+    return (
+        last_rule["hanger"],
+        last_rule["spacing"],
+        last_rule.get("dist_from_end", 1.0),
+        last_rule["joints"]
+    )
 
 
 def get_hanger_button(doc, elem, hanger_name):
@@ -447,7 +489,7 @@ def process_run(ordered_chain, entry_conns, settings, doc, atos):
         
         # Read rules for the first pipe of this specific segment
         first_pipe = seg[0]['element']
-        hanger_name, spacing, _ = get_rule_for_element(first_pipe, settings)
+        hanger_name, spacing, dist_from_end, _ = get_rule_for_element(first_pipe, settings)
         
         if is_disabled_hanger(hanger_name): 
             continue
@@ -456,7 +498,7 @@ def process_run(ordered_chain, entry_conns, settings, doc, atos):
         if not fab_btn: 
             continue
 
-        run_placed += place_segment(seg, fab_btn, DIST_FROM_END, spacing, atos, is_last, doc)
+        run_placed += place_segment(seg, fab_btn, dist_from_end, spacing, atos, is_last, doc)
         
     return run_placed
 
@@ -566,7 +608,7 @@ try:
         chain_elements = []
         
         for e in svc_elements:
-            hanger_name, _, joints = get_rule_for_element(e, settings)
+            hanger_name, _, _, joints = get_rule_for_element(e, settings)
             if is_disabled_hanger(hanger_name): 
                 continue
             
@@ -579,7 +621,7 @@ try:
         for e in joints_elements:
             if not is_pipe(e) or vertical_fab(e): continue
             
-            h_name, sp, _ = get_rule_for_element(e, settings)
+            h_name, sp, dist_from_end, _ = get_rule_for_element(e, settings)
             if is_disabled_hanger(h_name): continue
             
             btn = get_hanger_button(doc, e, h_name)
@@ -589,23 +631,25 @@ try:
             pipe_connectors = list(e.ConnectorManager.Connectors)
             if not pipe_connectors: continue
             
-            if pipelen < 2 * DIST_FROM_END:
+            if pipelen < 2 * dist_from_end:
                 try: 
                     FabricationPart.CreateHanger(doc, btn, e.Id, pipe_connectors[0], pipelen / 2.0, ATOS)
                     placed_count += 1
-                except: pass
+                except: 
+                    pass
             else:
                 try:
                     for c in pipe_connectors:
-                        FabricationPart.CreateHanger(doc, btn, e.Id, c, DIST_FROM_END, ATOS)
+                        FabricationPart.CreateHanger(doc, btn, e.Id, c, dist_from_end, ATOS)
                         placed_count += 1
-                    if pipelen > sp + 2 * DIST_FROM_END:
-                        pos = DIST_FROM_END
-                        for _ in range(int((math.floor(pipelen) - 2 * DIST_FROM_END) / sp)):
+                    if pipelen > sp + 2 * dist_from_end:
+                        pos = dist_from_end
+                        for _ in range(int((math.floor(pipelen) - 2 * dist_from_end) / sp)):
                             pos += sp
                             FabricationPart.CreateHanger(doc, btn, e.Id, pipe_connectors[0], pos, ATOS)
                             placed_count += 1
-                except: pass
+                except: 
+                    pass
 
         # 2. Process Continuous Chain runs strictly isolated within this service's element group
         if chain_elements:

@@ -60,7 +60,7 @@ def get_hangers_for_service(doc, service_name):
                                 bt = svc.GetButton(gi, bi)
                                 if bt and bt.IsAHanger and bt.Name:
                                     names.add(bt.Name.strip())
-            
+
             if not names:
                 for svc in config.GetAllLoadedServices():
                     grp_count = svc.PaletteCount if RevitINT > 2022 else svc.GroupCount
@@ -71,7 +71,7 @@ def get_hangers_for_service(doc, service_name):
                                 names.add(bt.Name.strip())
     except:
         pass
-    
+
     result = sorted(list(names))
     if "--- NONE ---" not in result:
         result.insert(0, "--- NONE ---")
@@ -86,14 +86,18 @@ def load_service_settings(path):
     with open(path, 'r') as f:
         for line in f:
             line = line.strip()
-            if "=" not in line: continue
+            if "=" not in line:
+                continue
             parts = line.split("=", 1)
-            if len(parts) != 2: continue
+            if len(parts) != 2:
+                continue
 
             key = parts[0].strip()
             val_string = parts[1].strip()
             rules = []
-            
+
+            # Old single-rule format: hanger|spacing|joints
+            # New single-rule format: hanger|spacing|dist_from_end|joints
             if ":" not in val_string:
                 vals = val_string.split("|")
                 if len(vals) == 3:
@@ -102,23 +106,51 @@ def load_service_settings(path):
                             "size": 999.0,
                             "hanger": vals[0].strip(),
                             "spacing": float(vals[1].strip()),
+                            "dist_from_end": 1.0,
                             "joints": vals[2].strip().lower() == "true"
                         })
-                    except: pass
+                    except:
+                        pass
+                elif len(vals) == 4:
+                    try:
+                        rules.append({
+                            "size": 999.0,
+                            "hanger": vals[0].strip(),
+                            "spacing": float(vals[1].strip()),
+                            "dist_from_end": float(vals[2].strip()),
+                            "joints": vals[3].strip().lower() == "true"
+                        })
+                    except:
+                        pass
             else:
                 rule_strings = val_string.split("|")
                 for rs in rule_strings:
                     r_parts = rs.split(":")
+                    # Old rule format: size:hanger:spacing:joints
                     if len(r_parts) == 4:
                         try:
                             rules.append({
                                 "size": float(r_parts[0].strip()),
                                 "hanger": r_parts[1].strip(),
                                 "spacing": float(r_parts[2].strip()),
+                                "dist_from_end": 1.0,
                                 "joints": r_parts[3].strip().lower() == "true"
                             })
-                        except: pass
-                        
+                        except:
+                            pass
+                    # New rule format: size:hanger:spacing:dist_from_end:joints
+                    elif len(r_parts) == 5:
+                        try:
+                            rules.append({
+                                "size": float(r_parts[0].strip()),
+                                "hanger": r_parts[1].strip(),
+                                "spacing": float(r_parts[2].strip()),
+                                "dist_from_end": float(r_parts[3].strip()),
+                                "joints": r_parts[4].strip().lower() == "true"
+                            })
+                        except:
+                            pass
+
             if rules:
                 rules.sort(key=lambda x: x["size"])
                 settings[key] = rules
@@ -131,7 +163,13 @@ def save_service_settings(path, settings):
             rules = settings[key]
             rule_strings = []
             for r in rules:
-                rule_strings.append("{0}:{1}:{2}:{3}".format(r["size"], r["hanger"], r["spacing"], r["joints"]))
+                rule_strings.append("{0}:{1}:{2}:{3}:{4}".format(
+                    r["size"],
+                    r["hanger"],
+                    r["spacing"],
+                    r["dist_from_end"],
+                    r["joints"]
+                ))
             f.write("{0}={1}\n".format(key, " | ".join(rule_strings)))
 
 
@@ -140,17 +178,21 @@ def safe_param_string(elem, param_name):
         p = elem.LookupParameter(param_name)
         if p:
             val = p.AsString()
-            if val and val.strip(): return val.strip()
+            if val and val.strip():
+                return val.strip()
             val = p.AsValueString()
-            if val and val.strip(): return val.strip()
-    except: pass
+            if val and val.strip():
+                return val.strip()
+    except:
+        pass
     return None
 
 
 def get_service_name(elem):
     for p_name in ["Fabrication Service Name", "Service Name"]:
         val = safe_param_string(elem, p_name)
-        if val: return val
+        if val:
+            return val
     return "UNASSIGNED"
 
 
@@ -167,7 +209,8 @@ def collect_services_from_model(doc):
             svc_name = get_service_name(elem)
             if svc_name != "UNASSIGNED":
                 services.add(svc_name)
-    except: pass
+    except:
+        pass
     return sorted(list(services))
 
 
@@ -181,7 +224,7 @@ class PipeServiceForm(Window):
         self.inputs = {}
         self.doc = doc
 
-        self.Width = 720
+        self.Width = 760
         self.Height = 800
 
         root = Grid()
@@ -215,10 +258,16 @@ class PipeServiceForm(Window):
             rules = existing_settings.get(service, [])
             service_hangers = get_hangers_for_service(self.doc, service)
             default_hanger = service_hangers[0] if service_hangers else "--- NONE ---"
-            
+
             if not rules:
-                rules = [{"size": 999.0, "hanger": default_hanger, "spacing": 10.0, "joints": True}]
-                
+                rules = [{
+                    "size": 999.0,
+                    "hanger": default_hanger,
+                    "spacing": 8.0,
+                    "dist_from_end": 1.0,
+                    "joints": False
+                }]
+
             self.build_service_block(service, rules, service_hangers, default_hanger)
 
         button_panel = StackPanel()
@@ -246,7 +295,7 @@ class PipeServiceForm(Window):
 
     def build_service_block(self, service, rules, service_hangers, default_hanger):
         self.inputs[service] = []
-        
+
         border = Border()
         border.BorderBrush = Brushes.LightGray
         border.BorderThickness = Thickness(1)
@@ -254,18 +303,18 @@ class PipeServiceForm(Window):
         border.Margin = Thickness(0, 0, 15, 12)
         border.Padding = Thickness(8)
         border.Background = SolidColorBrush(Colors.WhiteSmoke)
-        
+
         block_panel = StackPanel()
         border.Child = block_panel
 
         header_grid = Grid()
         header_grid.Margin = Thickness(0, 0, 0, 8)
-        
+
         hc0 = ColumnDefinition(); hc0.Width = GridLength(1, GridUnitType.Star)
         hc1 = ColumnDefinition(); hc1.Width = GridLength.Auto
         header_grid.ColumnDefinitions.Add(hc0)
         header_grid.ColumnDefinitions.Add(hc1)
-        
+
         title = TextBlock()
         title.Text = service
         title.FontWeight = FontWeights.Bold
@@ -273,30 +322,32 @@ class PipeServiceForm(Window):
         title.VerticalAlignment = VerticalAlignment.Center
         Grid.SetColumn(title, 0)
         header_grid.Children.Add(title)
-        
+
         add_btn = Button()
         add_btn.Content = "+ Add Break"
         add_btn.Width = 80
         add_btn.Height = 22
         Grid.SetColumn(add_btn, 1)
         header_grid.Children.Add(add_btn)
-        
+
         block_panel.Children.Add(header_grid)
 
         col_headers = Grid()
         col_headers.Margin = Thickness(0, 0, 0, 4)
-        
+
         cd0 = ColumnDefinition(); cd0.Width = GridLength(90)
         cd1 = ColumnDefinition(); cd1.Width = GridLength(1, GridUnitType.Star)
         cd2 = ColumnDefinition(); cd2.Width = GridLength(80)
-        cd3 = ColumnDefinition(); cd3.Width = GridLength(90)
-        cd4 = ColumnDefinition(); cd4.Width = GridLength(40)
-        
+        cd3 = ColumnDefinition(); cd3.Width = GridLength(95)
+        cd4 = ColumnDefinition(); cd4.Width = GridLength(55)
+        cd5 = ColumnDefinition(); cd5.Width = GridLength(40)
+
         col_headers.ColumnDefinitions.Add(cd0)
         col_headers.ColumnDefinitions.Add(cd1)
         col_headers.ColumnDefinitions.Add(cd2)
         col_headers.ColumnDefinitions.Add(cd3)
         col_headers.ColumnDefinitions.Add(cd4)
+        col_headers.ColumnDefinitions.Add(cd5)
 
         def make_header(text, col, align=HorizontalAlignment.Left):
             tb = TextBlock()
@@ -310,8 +361,9 @@ class PipeServiceForm(Window):
         col_headers.Children.Add(make_header("Up To Size (\")", 0))
         col_headers.Children.Add(make_header("Hanger Type", 1))
         col_headers.Children.Add(make_header("Spacing (ft)", 2, HorizontalAlignment.Center))
-        col_headers.Children.Add(make_header("Joints", 3, HorizontalAlignment.Center))
-        
+        col_headers.Children.Add(make_header("Dist End (ft)", 3, HorizontalAlignment.Center))
+        col_headers.Children.Add(make_header("Joints", 4, HorizontalAlignment.Center))
+
         block_panel.Children.Add(col_headers)
 
         rows_panel = StackPanel()
@@ -330,22 +382,30 @@ class PipeServiceForm(Window):
 
     def add_rule_row(self, service, parent_panel, rule_data, service_hangers, default_hanger):
         if not rule_data:
-            rule_data = {"size": 999.0, "hanger": default_hanger, "spacing": 10.0, "joints": True}
-            
+            rule_data = {
+                "size": 999.0,
+                "hanger": default_hanger,
+                "spacing": 8.0,
+                "dist_from_end": 1.0,
+                "joints": False
+            }
+
         row_grid = Grid()
         row_grid.Margin = Thickness(0, 2, 0, 2)
-        
+
         cd0 = ColumnDefinition(); cd0.Width = GridLength(90)
         cd1 = ColumnDefinition(); cd1.Width = GridLength(1, GridUnitType.Star)
         cd2 = ColumnDefinition(); cd2.Width = GridLength(80)
-        cd3 = ColumnDefinition(); cd3.Width = GridLength(90)
-        cd4 = ColumnDefinition(); cd4.Width = GridLength(40)
-        
+        cd3 = ColumnDefinition(); cd3.Width = GridLength(95)
+        cd4 = ColumnDefinition(); cd4.Width = GridLength(55)
+        cd5 = ColumnDefinition(); cd5.Width = GridLength(40)
+
         row_grid.ColumnDefinitions.Add(cd0)
         row_grid.ColumnDefinitions.Add(cd1)
         row_grid.ColumnDefinitions.Add(cd2)
         row_grid.ColumnDefinitions.Add(cd3)
         row_grid.ColumnDefinitions.Add(cd4)
+        row_grid.ColumnDefinitions.Add(cd5)
 
         tb_size = TextBox()
         tb_size.Text = str(rule_data["size"])
@@ -372,11 +432,19 @@ class PipeServiceForm(Window):
         Grid.SetColumn(tb_spacing, 2)
         row_grid.Children.Add(tb_spacing)
 
+        tb_dist_end = TextBox()
+        tb_dist_end.Text = str(rule_data.get("dist_from_end", 1.0))
+        tb_dist_end.Height = 22
+        tb_dist_end.Margin = Thickness(0, 0, 10, 0)
+        tb_dist_end.TextAlignment = TextAlignment.Center
+        Grid.SetColumn(tb_dist_end, 3)
+        row_grid.Children.Add(tb_dist_end)
+
         chk_joints = CheckBox()
         chk_joints.IsChecked = rule_data["joints"]
         chk_joints.HorizontalAlignment = HorizontalAlignment.Center
         chk_joints.VerticalAlignment = VerticalAlignment.Center
-        Grid.SetColumn(chk_joints, 3)
+        Grid.SetColumn(chk_joints, 4)
         row_grid.Children.Add(chk_joints)
 
         del_btn = Button()
@@ -385,17 +453,18 @@ class PipeServiceForm(Window):
         del_btn.Width = 22
         del_btn.Foreground = Brushes.Red
         del_btn.FontWeight = FontWeights.Bold
-        Grid.SetColumn(del_btn, 4)
+        Grid.SetColumn(del_btn, 5)
         row_grid.Children.Add(del_btn)
 
         rule_controls = {
-            "size": tb_size, 
-            "hanger": cb_hanger, 
-            "spacing": tb_spacing, 
+            "size": tb_size,
+            "hanger": cb_hanger,
+            "spacing": tb_spacing,
+            "dist_from_end": tb_dist_end,
             "joints": chk_joints,
             "ui_grid": row_grid
         }
-        
+
         self.inputs[service].append(rule_controls)
 
         def make_del_handler(svc, pnl, r_dict):
@@ -419,15 +488,17 @@ class PipeServiceForm(Window):
                         size_val = 999.0
                     else:
                         size_val = float(size_text)
-                        
+
                     spacing_val = float(controls["spacing"].Text)
+                    dist_end_val = float(controls["dist_from_end"].Text)
                     selected_hanger = controls["hanger"].SelectedItem
                     hanger_val = str(selected_hanger).strip() if selected_hanger else "--- NONE ---"
-                    
+
                     parsed_rules.append({
                         "size": size_val,
                         "hanger": hanger_val,
                         "spacing": spacing_val,
+                        "dist_from_end": dist_end_val,
                         "joints": bool(controls["joints"].IsChecked)
                     })
                 except:
@@ -446,6 +517,7 @@ class PipeServiceForm(Window):
         self.DialogResult = False
         self.Close()
 
+
 try:
     services_in_model = collect_services_from_model(doc)
     saved_settings = load_service_settings(FILEPATH)
@@ -457,6 +529,6 @@ try:
         if form.ShowDialog():
             if form.result:
                 save_service_settings(FILEPATH, form.result)
-                
+
 except Exception as e:
     TaskDialog.Show("Error Generating Config", traceback.format_exc())
