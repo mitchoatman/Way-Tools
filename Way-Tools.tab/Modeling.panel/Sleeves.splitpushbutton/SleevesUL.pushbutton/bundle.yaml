@@ -12,7 +12,8 @@ tooltip: |-
   Floorplan View - sleeves are placed on level above.
   3D View - visible pipes crossing level lines are populated with sleeves.
   
-  Pre-Selected - floor sleeves are placed on the selected element(s) only.
+  Pre-Selected - floor sleeves are placed on the selected
+  element(s) only.
 
   [Shift]+Click:    
   Place Wall sleeve parts on pipe centerline at selected linked wall location.
