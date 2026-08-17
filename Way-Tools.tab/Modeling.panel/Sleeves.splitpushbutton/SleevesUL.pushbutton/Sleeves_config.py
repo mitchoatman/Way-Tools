@@ -1,0 +1,515 @@
+# coding: utf8
+import clr
+import math
+import sys
+import re
+from fractions import Fraction
+import os
+
+clr.AddReference("PresentationFramework")
+clr.AddReference("PresentationCore")
+clr.AddReference("WindowsBase")
+
+from Autodesk.Revit.DB import *
+from Autodesk.Revit.UI import TaskDialog
+from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
+from Autodesk.Revit.Exceptions import OperationCanceledException
+from System.Windows import Window, Thickness, WindowStartupLocation, ResizeMode
+from System.Windows.Controls import StackPanel, TextBox, ListBox, Label, ComboBox
+from System.Windows.Input import Keyboard
+
+# Revit
+doc = __revit__.ActiveUIDocument.Document
+uidoc = __revit__.ActiveUIDocument
+
+# -----------------------------
+# DIAMETER MAP
+# -----------------------------
+DIAMETER_MAP = {
+    (0.0, 1.0): 2.0, (1.0, 1.25): 2.5, (1.25, 1.5): 3.0,
+    (1.5, 2.5): 4.0, (2.5, 3.5): 5.0, (3.5, 4.5): 6.0,
+    (4.5, 7.5): 8.0, (7.5, 8.5): 10.0, (8.5, 10.5): 12.0,
+    (10.5, 14.5): 16.0, (14.5, 16.5): 18.0, (16.5, 18.5): 20.0,
+    (18.5, 20.5): 22.0, (20.5, 22.5): 24.0, (22.5, 24.5): 26.0,
+    (24.5, 26.5): 28.0, (26.5, 28.5): 30.0, (28.5, 30.5): 32.0,
+    (30.5, 32.5): 34.0, (32.5, 34.5): 36.0
+}
+
+# -----------------------------
+# DEFAULT SLEEVE LENGTH FILE
+# -----------------------------
+temp_folder = r"c:\Temp"
+sleeve_length_file = os.path.join(temp_folder, 'Ribbon_Sleeve.txt')
+
+if not os.path.exists(temp_folder):
+    os.makedirs(temp_folder)
+
+if not os.path.exists(sleeve_length_file):
+    with open(sleeve_length_file, 'w') as f:
+        f.write('6')
+
+with open(sleeve_length_file, 'r') as f:
+    sleeve_length = float(f.read().strip())
+
+# -----------------------------
+# SIZE HELPERS
+# -----------------------------
+def clean_size_string(size_str):
+    if not size_str:
+        return ""
+    return re.sub(r'["\']|ø', '', size_str.strip())
+
+def parse_size_string_to_inches(size_str):
+    cleaned = clean_size_string(size_str)
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        pass
+
+    m = re.match(r'^\s*(?:(\d+)[-\s])?(\d+/\d+)\s*$', cleaned)
+    if m:
+        int_part, frac_part = m.groups()
+        val = float(Fraction(frac_part))
+        if int_part:
+            val += float(int_part)
+        return val
+
+    raise Exception("Could not parse Overall Size: {}".format(size_str))
+
+def get_mapped_sleeve_diameter_feet(host_part):
+    p = host_part.get_Parameter(BuiltInParameter.RBS_REFERENCE_OVERALLSIZE)
+    if p is None:
+        p = host_part.LookupParameter("Overall Size")
+    if p is None:
+        raise Exception("Could not find 'Overall Size' parameter.")
+
+    raw = p.AsString()
+    if not raw:
+        raise Exception("Overall Size is empty.")
+
+    pipe_dia_in = parse_size_string_to_inches(raw)
+
+    for (lo, hi), sleeve_in in DIAMETER_MAP.items():
+        if lo < pipe_dia_in <= hi:
+            return sleeve_in / 12.0
+
+    return 2.0 / 12.0
+
+def set_part_size_and_length(new_part, host_part):
+    try:
+        new_diameter = get_mapped_sleeve_diameter_feet(host_part)
+        size_param = new_part.LookupParameter("Main Primary Diameter")
+        if size_param and not size_param.IsReadOnly:
+            size_param.Set(new_diameter)
+    except:
+        pass
+
+    try:
+        length_param = new_part.LookupParameter("Length")
+        if length_param and not length_param.IsReadOnly:
+            length_param.Set(sleeve_length)
+    except:
+        pass
+
+# -----------------------------
+# ROTATION
+# -----------------------------
+def rotate_to_vector(doc, element, origin, from_vec, to_vec):
+    from_vec = from_vec.Normalize()
+    to_vec = to_vec.Normalize()
+    axis = from_vec.CrossProduct(to_vec)
+
+    if axis.GetLength() < 1e-8:
+        dot = from_vec.DotProduct(to_vec)
+        if dot < 0:
+            axis = XYZ.BasisZ
+            angle = math.pi
+        else:
+            return
+    else:
+        axis = axis.Normalize()
+        angle = math.acos(max(min(from_vec.DotProduct(to_vec), 1.0), -1.0))
+
+    rot_line = Line.CreateBound(origin, origin + axis)
+    ElementTransformUtils.RotateElement(doc, element.Id, rot_line, angle)
+
+# -----------------------------
+# CONNECTOR HELPERS
+# -----------------------------
+def get_part_connectors(part):
+    try:
+        return list(part.ConnectorManager.Connectors)
+    except:
+        return []
+
+def get_end_connector_point(part, direction_vec):
+    conns = get_part_connectors(part)
+    if len(conns) < 2:
+        return part.Origin
+
+    best_conn = None
+    best_val = None
+
+    for c in conns:
+        pt = c.Origin
+        val = pt.X * direction_vec.X + pt.Y * direction_vec.Y + pt.Z * direction_vec.Z
+        if best_conn is None or val < best_val:
+            best_conn = c
+            best_val = val
+
+    return best_conn.Origin
+
+# -----------------------------
+# SELECTION FILTERS
+# -----------------------------
+class FabricationStraightSelectionFilter(ISelectionFilter):
+    def AllowElement(self, elem):
+        try:
+            return isinstance(elem, FabricationPart) and isinstance(elem.Location, LocationCurve)
+        except:
+            return False
+
+    def AllowReference(self, reference, point):
+        return False
+
+class LinkedWallSelectionFilter(ISelectionFilter):
+    def AllowElement(self, element):
+        try:
+            return isinstance(element, RevitLinkInstance)
+        except:
+            return False
+
+    def AllowReference(self, reference, point):
+        try:
+            link_instance = doc.GetElement(reference.ElementId)
+            if not isinstance(link_instance, RevitLinkInstance):
+                return False
+
+            link_doc = link_instance.GetLinkDocument()
+            if not link_doc:
+                return False
+
+            linked_elem = link_doc.GetElement(reference.LinkedElementId)
+            return isinstance(linked_elem, Wall)
+        except:
+            return False
+
+# -----------------------------
+# SELECTION HELPERS
+# -----------------------------
+def select_fabrication_pipes():
+    refs = uidoc.Selection.PickObjects(
+        ObjectType.Element,
+        FabricationStraightSelectionFilter(),
+        "Select one or more fabrication pipes/straights for wall sleeves, then click Finish"
+    )
+
+    pipes = []
+    for r in refs:
+        elem = doc.GetElement(r.ElementId)
+        if elem:
+            pipes.append(elem)
+
+    if not pipes:
+        raise Exception("No fabrication pipes were selected.")
+
+    return pipes
+
+def select_linked_wall():
+    return uidoc.Selection.PickObject(
+        ObjectType.LinkedElement,
+        LinkedWallSelectionFilter(),
+        "Select a wall in a Revit link"
+    )
+
+# -----------------------------
+# LINKED WALL HELPERS
+# -----------------------------
+def get_linked_wall_thickness_and_curve(link_ref):
+    link_instance = doc.GetElement(link_ref.ElementId)
+    if link_instance is None:
+        raise Exception("Could not get Revit link instance.")
+
+    link_doc = link_instance.GetLinkDocument()
+    if link_doc is None:
+        raise Exception("Could not access linked document.")
+
+    wall = link_doc.GetElement(link_ref.LinkedElementId)
+    if wall is None or not isinstance(wall, Wall):
+        raise Exception("Selected linked element is not a valid wall.")
+
+    wall_loc = wall.Location
+    if not isinstance(wall_loc, LocationCurve):
+        raise Exception("Selected linked wall does not have a valid location curve.")
+
+    wall_curve = wall_loc.Curve
+    link_transform = link_instance.GetTotalTransform()
+    wall_curve_host = wall_curve.CreateTransformed(link_transform)
+
+    thickness = wall.WallType.Width
+    return thickness, wall_curve_host
+
+def project_curve_to_xy(curve):
+    p0 = curve.GetEndPoint(0)
+    p1 = curve.GetEndPoint(1)
+    return Line.CreateBound(
+        XYZ(p0.X, p0.Y, 0.0),
+        XYZ(p1.X, p1.Y, 0.0)
+    )
+
+def get_wall_sleeve_data_from_link(host_part, link_ref):
+    pipe_curve = host_part.Location.Curve
+    wall_thickness, wall_curve = get_linked_wall_thickness_and_curve(link_ref)
+
+    pipe_p0 = pipe_curve.GetEndPoint(0)
+    pipe_p1 = pipe_curve.GetEndPoint(1)
+
+    pipe_xy = project_curve_to_xy(pipe_curve)
+    wall_xy = project_curve_to_xy(wall_curve)
+
+    result_array = clr.Reference[IntersectionResultArray]()
+    result = pipe_xy.Intersect(wall_xy, result_array)
+
+    if result != SetComparisonResult.Overlap or not result_array.Value or result_array.Value.Size == 0:
+        raise Exception("Pipe does not intersect the selected linked wall in plan.")
+
+    intersection_xy = result_array.Value[0].XYZPoint
+
+    v2d = XYZ(pipe_p1.X - pipe_p0.X, pipe_p1.Y - pipe_p0.Y, 0.0)
+    w2d = XYZ(intersection_xy.X - pipe_p0.X, intersection_xy.Y - pipe_p0.Y, 0.0)
+
+    v2d_len_sq = v2d.DotProduct(v2d)
+    if v2d_len_sq < 1e-8:
+        raise Exception("Host pipe is vertical or too close to vertical for wall sleeve placement.")
+
+    t = w2d.DotProduct(v2d) / v2d_len_sq
+    t = max(0.0, min(1.0, t))
+
+    # rebuild the true 3D intersection point on the actual sloped pipe
+    intersection_point = pipe_p0 + (pipe_p1 - pipe_p0).Multiply(t)
+
+    flat_dir = XYZ(pipe_p1.X - pipe_p0.X, pipe_p1.Y - pipe_p0.Y, 0.0)
+    if flat_dir.GetLength() < 1e-8:
+        raise Exception("Host pipe is vertical or too close to vertical for wall sleeve placement.")
+
+    flat_dir = flat_dir.Normalize()
+
+    start_point = intersection_point - flat_dir.Multiply(wall_thickness * 0.5)
+    return start_point, wall_thickness, flat_dir
+
+# -----------------------------
+# GET SERVICE & WALL BUTTONS ONLY
+# -----------------------------
+config = FabricationConfiguration.GetFabricationConfiguration(doc)
+services = config.GetAllLoadedServices()
+target_service = None
+
+for s in services:
+    if s.Name:
+        n = s.Name.lower()
+        if 'sleeve' in n or 'sleeves' in n:
+            target_service = s
+            break
+
+if not target_service:
+    TaskDialog.Show("Error", "Could not find a Fabrication Service name containing 'Sleeve'.")
+    sys.exit()
+
+palette_names = []
+button_records = []
+
+for p in range(target_service.PaletteCount):
+    palette_name = target_service.GetPaletteName(p)
+    local_records = []
+
+    for i in range(target_service.GetButtonCount(p)):
+        btn = target_service.GetButton(p, i)
+
+        if btn.ConditionCount > 1:
+            for c in range(btn.ConditionCount):
+                display = u"{} - {}".format(btn.Name, btn.GetConditionName(c))
+                is_wall = ("wall" in display.lower()) or ("wall" in palette_name.lower())
+                if is_wall:
+                    local_records.append({
+                        "palette_index": p,
+                        "palette_name": palette_name,
+                        "display": display,
+                        "button": btn,
+                        "condition_index": c
+                    })
+        else:
+            display = u"{}".format(btn.Name)
+            is_wall = ("wall" in display.lower()) or ("wall" in palette_name.lower())
+            if is_wall:
+                local_records.append({
+                    "palette_index": p,
+                    "palette_name": palette_name,
+                    "display": display,
+                    "button": btn,
+                    "condition_index": 0
+                })
+
+    if local_records:
+        palette_names.append(palette_name)
+        button_records.extend(local_records)
+
+if not button_records:
+    TaskDialog.Show("Error", "No wall sleeve fabrication buttons were found in the sleeve service.")
+    sys.exit()
+
+# -----------------------------
+# WPF PART PICKER
+# -----------------------------
+class PartPicker(Window):
+    def __init__(self, records, palettes):
+        self.all_records = list(records)
+        self.filtered_records = list(records)
+        self.selected_record = None
+        self.Title = "Select Wall Sleeve Fabrication Part"
+        self.Width = 400
+        self.Height = 620
+        self.WindowStartupLocation = WindowStartupLocation.CenterScreen
+        self.ResizeMode = ResizeMode.CanResize
+
+        stack = StackPanel()
+        stack.Margin = Thickness(10)
+
+        lbl_palette = Label()
+        lbl_palette.Content = "Palette:"
+        stack.Children.Add(lbl_palette)
+
+        self.palette_combo = ComboBox()
+        self.palette_combo.Margin = Thickness(0, 0, 0, 10)
+        self.palette_combo.Items.Add("All Palettes")
+        for p in palettes:
+            self.palette_combo.Items.Add(p)
+        self.palette_combo.SelectedIndex = 0
+        self.palette_combo.SelectionChanged += self.apply_filters
+        stack.Children.Add(self.palette_combo)
+
+        lbl_search = Label()
+        lbl_search.Content = "Search Wall Sleeve:"
+        stack.Children.Add(lbl_search)
+
+        self.search_box = TextBox()
+        self.search_box.Margin = Thickness(0, 0, 0, 10)
+        self.search_box.TextChanged += self.apply_filters
+        stack.Children.Add(self.search_box)
+
+        lbl_instr = Label()
+        lbl_instr.Content = "Double Click Item to Select"
+        lbl_instr.Margin = Thickness(0, 0, 0, 5)
+        stack.Children.Add(lbl_instr)
+
+        self.list_box = ListBox()
+        self.list_box.Height = 430
+        self.list_box.Margin = Thickness(0, 0, 0, 10)
+        self.list_box.MouseDoubleClick += self.on_double_click
+        stack.Children.Add(self.list_box)
+
+        self.Content = stack
+        self.refresh_list()
+        self.search_box.Focus()
+        Keyboard.Focus(self.search_box)
+
+    def refresh_list(self):
+        self.list_box.ItemsSource = [r["display"] for r in self.filtered_records]
+
+    def apply_filters(self, sender, args):
+        sel_palette = self.palette_combo.SelectedItem
+        search_text = self.search_box.Text.lower().strip()
+        records = self.all_records
+
+        if sel_palette and sel_palette != "All Palettes":
+            records = [r for r in records if r["palette_name"] == sel_palette]
+        if search_text:
+            records = [r for r in records if search_text in r["display"].lower()]
+
+        self.filtered_records = records
+        self.refresh_list()
+
+    def on_double_click(self, sender, args):
+        idx = self.list_box.SelectedIndex
+        if idx < 0 or idx >= len(self.filtered_records):
+            TaskDialog.Show("Error", "Please select a part.")
+            return
+        self.selected_record = self.filtered_records[idx]
+        self.DialogResult = True
+        self.Close()
+
+# -----------------------------
+# SHOW DIALOG
+# -----------------------------
+dlg = PartPicker(button_records, palette_names)
+if not dlg.ShowDialog():
+    sys.exit()
+
+selected_record = dlg.selected_record
+fab_btn = selected_record["button"]
+condition_index = selected_record["condition_index"]
+
+# -----------------------------
+# MAIN
+# -----------------------------
+t = None
+failed = []
+placed_count = 0
+
+try:
+    try:
+        host_parts = select_fabrication_pipes()
+    except OperationCanceledException:
+        sys.exit()
+
+    try:
+        wall_ref = select_linked_wall()
+    except OperationCanceledException:
+        sys.exit()
+
+    t = Transaction(doc, "Place Fabrication Wall Sleeves")
+    t.Start()
+
+    for host_part in host_parts:
+        try:
+            insert_point, wall_thickness, flat_pipe_dir = get_wall_sleeve_data_from_link(host_part, wall_ref)
+
+            new_part = FabricationPart.Create(doc, fab_btn, condition_index, host_part.LevelId)
+            doc.Regenerate()
+
+            set_part_size_and_length(new_part, host_part)
+            doc.Regenerate()
+
+            rotate_to_vector(doc, new_part, new_part.Origin, XYZ.BasisX, flat_pipe_dir)
+            doc.Regenerate()
+
+            end_point = get_end_connector_point(new_part, flat_pipe_dir)
+            move_vec = insert_point - end_point
+            ElementTransformUtils.MoveElement(doc, new_part.Id, move_vec)
+            doc.Regenerate()
+
+            placed_count += 1
+
+        except Exception as pipe_error:
+            try:
+                failed.append("Pipe {}: {}".format(host_part.Id.IntegerValue, str(pipe_error)))
+            except:
+                failed.append(str(pipe_error))
+
+    if placed_count == 0:
+        t.RollBack()
+        TaskDialog.Show("Wall Sleeve Placement", "No sleeves were placed.\n\n{}".format("\n".join(failed[:20])))
+        sys.exit()
+
+    t.Commit()
+
+    if failed:
+        TaskDialog.Show(
+            "Wall Sleeve Placement",
+            "Placed {} sleeve(s) with some issues.\n\n{}".format(placed_count, "\n".join(failed[:20]))
+        )
+
+except Exception as ex:
+    if t and t.HasStarted() and not t.HasEnded():
+        t.RollBack()
+    TaskDialog.Show("Error", str(ex))
