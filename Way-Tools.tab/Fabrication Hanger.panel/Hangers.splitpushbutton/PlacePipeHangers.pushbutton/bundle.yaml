@@ -17,6 +17,8 @@ tooltip: |-
   - Support Joints
   - Attach to Structure
 
+  Config settings must be set and are saved for each project file.
+
 # context directives are listed under `context` key, the order does not matter
 #context:
 #  - Selection

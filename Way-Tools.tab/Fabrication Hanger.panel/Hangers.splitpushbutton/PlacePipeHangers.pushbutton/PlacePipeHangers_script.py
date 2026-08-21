@@ -1,8 +1,10 @@
 # -*- coding: UTF-8 -*-
 import Autodesk
-from Autodesk.Revit.DB import Transaction, FabricationConfiguration, FabricationPart, XYZ, ConnectorProfileType
+from Autodesk.Revit.DB import Transaction, FabricationConfiguration, FabricationPart, XYZ, ConnectorProfileType, FilteredElementCollector
+from Autodesk.Revit.DB.ExtensibleStorage import Schema
 from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 from Autodesk.Revit.UI import TaskDialog
+from pyrevit import forms
 import math
 import os
 
@@ -25,15 +27,17 @@ MARGIN = 0.01
 DIST_FROM_END = 1.0  # Default 1ft (12") from end since new UI omits this parameter
 ATOS = True
 
-# Setup project-specific dynamic file path resolution to match the config creator script
+# Unique GUID for our Extensible Storage Schema (must match config script)
+SCHEMA_GUID = System.Guid("7B3F8A12-4C9E-4D21-8F6B-1E9A3C5D7F8E")
+DATA_STORAGE_NAME = "PipeHangerConfigData"
+
 file_path = doc.PathName
 file_name = System.IO.Path.GetFileNameWithoutExtension(file_path)
 if not file_name:
     file_name = doc.Title
 
-FOLDER_NAME = r"c:\Temp"
-project_name = file_name.replace(" ", "_")
-FILEPATH = os.path.join(FOLDER_NAME, "Ribbon_Pipe-Hanger-Config_{}.txt".format(project_name))
+SCRIPT_DIR = os.path.dirname(__file__)
+CONFIG_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "PlacePipeHangers_config.py")
 
 
 def show_balloon_notification(title, message, timeout=5000):
@@ -54,13 +58,33 @@ class FabricationPartSelectionFilter(ISelectionFilter):
         return False
 
 
-def load_service_settings(path):
+def load_service_settings(doc):
     settings = {}
-    if not os.path.exists(path):
-        return settings
+    try:
+        schema = Schema.Lookup(SCHEMA_GUID)
+        if not schema:
+            return settings
 
-    with open(path, 'r') as f:
-        for line in f:
+        collector = FilteredElementCollector(doc).OfClass(Autodesk.Revit.DB.ExtensibleStorage.DataStorage)
+        target_ds = None
+        for ds in collector:
+            if ds.Name == DATA_STORAGE_NAME:
+                target_ds = ds
+                break
+
+        if not target_ds:
+            return settings
+
+        entity = target_ds.GetEntity(schema)
+        if not entity.IsValid():
+            return settings
+
+        val_string = entity.Get[System.String]("ConfigPayload")
+        if not val_string:
+            return settings
+
+        lines = val_string.split("\n")
+        for line in lines:
             line = line.strip()
             if "=" not in line:
                 continue
@@ -69,13 +93,11 @@ def load_service_settings(path):
                 continue
 
             key = parts[0].strip()
-            val_string = parts[1].strip()
+            rule_block = parts[1].strip()
             rules = []
 
-            # Old single-rule format: hanger|spacing|joints
-            # New single-rule format: hanger|spacing|dist_from_end|joints
-            if ":" not in val_string:
-                vals = val_string.split("|")
+            if ":" not in rule_block:
+                vals = rule_block.split("|")
                 if len(vals) == 3:
                     try:
                         rules.append({
@@ -99,10 +121,9 @@ def load_service_settings(path):
                     except:
                         pass
             else:
-                rule_strings = val_string.split("|")
+                rule_strings = rule_block.split("|")
                 for rs in rule_strings:
                     r_parts = rs.split(":")
-                    # Old rule format: size:hanger:spacing:joints
                     if len(r_parts) == 4:
                         try:
                             rules.append({
@@ -114,7 +135,6 @@ def load_service_settings(path):
                             })
                         except:
                             pass
-                    # New rule format: size:hanger:spacing:dist_from_end:joints
                     elif len(r_parts) == 5:
                         try:
                             rules.append({
@@ -130,6 +150,8 @@ def load_service_settings(path):
             if rules:
                 rules.sort(key=lambda x: x["size"])
                 settings[key] = rules
+    except:
+        pass
     return settings
 
 
@@ -172,6 +194,18 @@ def is_disabled_hanger(hanger_name):
     if not hanger_name: return True
     h = hanger_name.strip().upper()
     return h == "" or h == "--- NONE ---" or "NONE" in h
+
+
+def are_all_settings_none(settings):
+    """Returns True if every rule across all services points to 'NONE'."""
+    if not settings:
+        return True
+    
+    for svc, rules in settings.items():
+        for r in rules:
+            if not is_disabled_hanger(r.get("hanger", "")):
+                return False  # Found at least one active hanger rule
+    return True
 
 
 def get_rule_for_element(elem, settings):
@@ -280,7 +314,7 @@ def get_pipe_direction(entry_xyz, exit_xyz):
 
 
 # ==============================================================================
-# 1-to-1 ORIGINAL LOGIC FOR WALKING CHAINS & PLACING HANGERS
+# WALKING CHAINS & PLACING HANGERS
 # ==============================================================================
 
 def walk_chain(selected_elements, start_element, start_connector):
@@ -487,7 +521,6 @@ def process_run(ordered_chain, entry_conns, settings, doc, atos):
     for i, seg in enumerate(segments):
         is_last = (i == len(segments) - 1)
         
-        # Read rules for the first pipe of this specific segment
         first_pipe = seg[0]['element']
         hanger_name, spacing, dist_from_end, _ = get_rule_for_element(first_pipe, settings)
         
@@ -536,7 +569,6 @@ def group_leftovers(leftovers):
     return groups
 
 
-# Finds a viable starting element and its open connector from a contiguous network
 def find_best_start(network):
     if not network: return None, None
     if len(network) == 1:
@@ -564,7 +596,6 @@ def find_best_start(network):
         if open_conn and connected_count >= 0:
             return e, open_conn
             
-    # Fallback
     conns = list(network[0].ConnectorManager.Connectors)
     return network[0], conns[0] if conns else None
 
@@ -573,13 +604,46 @@ def find_best_start(network):
 # MAIN EXECUTION
 # ---------------------------------------------------------------------------
 try:
-    settings = load_service_settings(FILEPATH)
-    if not settings:
-        TaskDialog.Show("Place Hangers", "Config file not found or empty for project '{}'!\nRun the configuration tool first.".format(file_name))
-        import sys
-        sys.exit()
+    settings = load_service_settings(doc)
+    
+    # Prompt user if settings are missing OR if all configured rules evaluate to "--- NONE ---"
+    if not settings or are_all_settings_none(settings):
+        alert_msg = (
+            "No hanger settings are configured!".format(file_name)
+            if settings else
+            "No hanger configurations found in '{}'".format(file_name)
+        )
 
-    # Multi-selection workflow: box select elements freely without a single-element anchor prompt
+        selected = forms.alert(
+            alert_msg,
+            title="Place Hangers",
+            options=["Open Configuration Settings", "Cancel"]
+        )
+        
+        if selected == "Open Configuration Settings":
+            if os.path.exists(CONFIG_SCRIPT_PATH):
+                try:
+                    with open(CONFIG_SCRIPT_PATH, 'r') as cf:
+                        exec(cf.read(), globals())
+                    
+                    settings = load_service_settings(doc)
+                except Exception as ex:
+                    TaskDialog.Show("Configuration Error", "Failed to run config script:\n{}".format(str(ex)))
+                    import sys
+                    sys.exit()
+            else:
+                TaskDialog.Show("Error", "Could not find config script at:\n{}".format(CONFIG_SCRIPT_PATH))
+                import sys
+                sys.exit()
+        else:
+            import sys
+            sys.exit()
+            
+        if not settings or are_all_settings_none(settings):
+            TaskDialog.Show("Place Hangers", "Hanger placement cancelled. \nAll configurations remain disabled!")
+            import sys
+            sys.exit()
+
     selected_refs = uidoc.Selection.PickObjects(
         ObjectType.Element, FabricationPartSelectionFilter(),
         "Select Fabrication Parts for Hanger Placement")
@@ -594,7 +658,6 @@ try:
 
     placed_count = 0
 
-    # Compartmentalize elements strictly by their individual Revit Service Name
     elements_by_service = {}
     for e in selected_elements:
         svc_name = get_service_name(e)
@@ -602,7 +665,6 @@ try:
             elements_by_service[svc_name] = []
         elements_by_service[svc_name].append(e)
 
-    # Process each service container entirely isolated from other services
     for svc_name, svc_elements in elements_by_service.items():
         joints_elements = []
         chain_elements = []
@@ -617,7 +679,6 @@ try:
             else:
                 chain_elements.append(e)
 
-        # 1. Process Joint-Supported independently per service
         for e in joints_elements:
             if not is_pipe(e) or vertical_fab(e): continue
             
@@ -651,7 +712,6 @@ try:
                 except: 
                     pass
 
-        # 2. Process Continuous Chain runs strictly isolated within this service's element group
         if chain_elements:
             networks = group_leftovers(chain_elements)
             
@@ -667,7 +727,6 @@ try:
                     branch_start = branch_elems[0]
                     branch_start_conn = next(iter(branch_start.ConnectorManager.Connectors), None)
                     
-                    # Verify attachment point to the main chain
                     for be in branch_elems:
                         for bc in be.ConnectorManager.Connectors:
                             for me in main_chain:

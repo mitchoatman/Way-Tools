@@ -4,7 +4,7 @@ import clr
 import traceback
 import System
 import re
-
+import Autodesk
 clr.AddReference('PresentationFramework')
 clr.AddReference('PresentationCore')
 clr.AddReference('WindowsBase')
@@ -22,25 +22,32 @@ from System.Windows.Controls import (
 )
 from System.Windows.Media import FontFamily, SolidColorBrush, Colors, Brushes
 
-from Autodesk.Revit.DB import FilteredElementCollector, BuiltInCategory, FabricationConfiguration
+from Autodesk.Revit.DB import FilteredElementCollector, BuiltInCategory, FabricationConfiguration, Transaction, ElementId
+from Autodesk.Revit.DB.ExtensibleStorage import Schema, SchemaBuilder, Entity, FieldBuilder, AccessLevel
 from Autodesk.Revit.UI import TaskDialog
 
 app = __revit__.Application
 doc = __revit__.ActiveUIDocument.Document
 RevitINT = float(app.VersionNumber)
 
-# Per-project configuration path setup
-file_path = doc.PathName
-file_name = System.IO.Path.GetFileNameWithoutExtension(file_path)
-if not file_name:
-    file_name = doc.Title
+# Unique GUID for our Extensible Storage Schema
+SCHEMA_GUID = System.Guid("7B3F8A12-4C9E-4D21-8F6B-1E9A3C5D7F8E")
+DATA_STORAGE_NAME = "PipeHangerConfigData"
 
-FOLDER_NAME = r"c:\Temp"
-project_name = file_name.replace(" ", "_")
-FILEPATH = os.path.join(FOLDER_NAME, "Ribbon_Pipe-Hanger-Config_{}.txt".format(project_name))
 
-if not os.path.exists(FOLDER_NAME):
-    os.makedirs(FOLDER_NAME)
+def get_or_create_schema():
+    schema = Schema.Lookup(SCHEMA_GUID)
+    if schema is not None:
+        return schema
+
+    builder = SchemaBuilder(SCHEMA_GUID)
+    builder.SetReadAccessLevel(AccessLevel.Public)
+    builder.SetWriteAccessLevel(AccessLevel.Public)
+    builder.SetVendorId("BIMTools")
+    builder.SetSchemaName("PipeHangerConfigSchema")
+    
+    builder.AddSimpleField("ConfigPayload", System.String)
+    return builder.Finish()
 
 
 def get_hangers_for_service(doc, service_name):
@@ -78,13 +85,33 @@ def get_hangers_for_service(doc, service_name):
     return result
 
 
-def load_service_settings(path):
+def load_service_settings(doc):
     settings = {}
-    if not os.path.exists(path):
-        return settings
+    try:
+        schema = Schema.Lookup(SCHEMA_GUID)
+        if not schema:
+            return settings
 
-    with open(path, 'r') as f:
-        for line in f:
+        collector = FilteredElementCollector(doc).OfClass(Autodesk.Revit.DB.ExtensibleStorage.DataStorage)
+        target_ds = None
+        for ds in collector:
+            if ds.Name == DATA_STORAGE_NAME:
+                target_ds = ds
+                break
+
+        if not target_ds:
+            return settings
+
+        entity = target_ds.GetEntity(schema)
+        if not entity.IsValid():
+            return settings
+
+        val_string = entity.Get[System.String]("ConfigPayload")
+        if not val_string:
+            return settings
+
+        lines = val_string.split("\n")
+        for line in lines:
             line = line.strip()
             if "=" not in line:
                 continue
@@ -93,84 +120,71 @@ def load_service_settings(path):
                 continue
 
             key = parts[0].strip()
-            val_string = parts[1].strip()
+            rule_block = parts[1].strip()
             rules = []
 
-            # Old single-rule format: hanger|spacing|joints
-            # New single-rule format: hanger|spacing|dist_from_end|joints
-            if ":" not in val_string:
-                vals = val_string.split("|")
-                if len(vals) == 3:
+            rule_strings = rule_block.split("|")
+            for rs in rule_strings:
+                r_parts = rs.split(":")
+                if len(r_parts) == 5:
                     try:
                         rules.append({
-                            "size": 999.0,
-                            "hanger": vals[0].strip(),
-                            "spacing": float(vals[1].strip()),
-                            "dist_from_end": 1.0,
-                            "joints": vals[2].strip().lower() == "true"
+                            "size": float(r_parts[0].strip()),
+                            "hanger": r_parts[1].strip(),
+                            "spacing": float(r_parts[2].strip()),
+                            "dist_from_end": float(r_parts[3].strip()),
+                            "joints": r_parts[4].strip().lower() == "true"
                         })
                     except:
                         pass
-                elif len(vals) == 4:
-                    try:
-                        rules.append({
-                            "size": 999.0,
-                            "hanger": vals[0].strip(),
-                            "spacing": float(vals[1].strip()),
-                            "dist_from_end": float(vals[2].strip()),
-                            "joints": vals[3].strip().lower() == "true"
-                        })
-                    except:
-                        pass
-            else:
-                rule_strings = val_string.split("|")
-                for rs in rule_strings:
-                    r_parts = rs.split(":")
-                    # Old rule format: size:hanger:spacing:joints
-                    if len(r_parts) == 4:
-                        try:
-                            rules.append({
-                                "size": float(r_parts[0].strip()),
-                                "hanger": r_parts[1].strip(),
-                                "spacing": float(r_parts[2].strip()),
-                                "dist_from_end": 1.0,
-                                "joints": r_parts[3].strip().lower() == "true"
-                            })
-                        except:
-                            pass
-                    # New rule format: size:hanger:spacing:dist_from_end:joints
-                    elif len(r_parts) == 5:
-                        try:
-                            rules.append({
-                                "size": float(r_parts[0].strip()),
-                                "hanger": r_parts[1].strip(),
-                                "spacing": float(r_parts[2].strip()),
-                                "dist_from_end": float(r_parts[3].strip()),
-                                "joints": r_parts[4].strip().lower() == "true"
-                            })
-                        except:
-                            pass
 
             if rules:
                 rules.sort(key=lambda x: x["size"])
                 settings[key] = rules
+    except:
+        pass
     return settings
 
 
-def save_service_settings(path, settings):
-    with open(path, 'w') as f:
-        for key in sorted(settings.keys()):
-            rules = settings[key]
-            rule_strings = []
-            for r in rules:
-                rule_strings.append("{0}:{1}:{2}:{3}:{4}".format(
-                    r["size"],
-                    r["hanger"],
-                    r["spacing"],
-                    r["dist_from_end"],
-                    r["joints"]
-                ))
-            f.write("{0}={1}\n".format(key, " | ".join(rule_strings)))
+def save_service_settings(doc, settings):
+    lines = []
+    for key in sorted(settings.keys()):
+        rules = settings[key]
+        rule_strings = []
+        for r in rules:
+            rule_strings.append("{0}:{1}:{2}:{3}:{4}".format(
+                r["size"],
+                r["hanger"],
+                r["spacing"],
+                r["dist_from_end"],
+                r["joints"]
+            ))
+        lines.append("{0}={1}".format(key, " | ".join(rule_strings)))
+
+    combined_text = "\n".join(lines)
+    schema = get_or_create_schema()
+
+    t = Transaction(doc, "Save Pipe Hanger Configurations")
+    t.Start()
+    try:
+        collector = FilteredElementCollector(doc).OfClass(Autodesk.Revit.DB.ExtensibleStorage.DataStorage)
+        target_ds = None
+        for ds in collector:
+            if ds.Name == DATA_STORAGE_NAME:
+                target_ds = ds
+                break
+
+        if not target_ds:
+            target_ds = Autodesk.Revit.DB.ExtensibleStorage.DataStorage.Create(doc)
+            target_ds.Name = DATA_STORAGE_NAME
+
+        entity = Entity(schema)
+        entity.Set("ConfigPayload", combined_text)
+        target_ds.SetEntity(entity)
+        t.Commit()
+    except Exception as e:
+        t.RollBack()
+        TaskDialog.Show("Error Saving Config", str(e))
 
 
 def safe_param_string(elem, param_name):
@@ -216,13 +230,23 @@ def collect_services_from_model(doc):
 
 class PipeServiceForm(Window):
     def __init__(self, services, existing_settings, doc):
-        self.Title = "Piping Hanger Configuration with Size Breaks ({})".format(file_name)
+        file_path = doc.PathName
+        file_name = System.IO.Path.GetFileNameWithoutExtension(file_path)
+        if not file_name:
+            file_name = doc.Title
+
+        self.base_title = "Piping Hanger Configuration ({})".format(file_name)
+        self.Title = self.base_title
         self.WindowStartupLocation = WindowStartupLocation.CenterScreen
         self.ResizeMode = ResizeMode.CanResize
         self.WindowStyle = WindowStyle.SingleBorderWindow
         self.result = None
         self.inputs = {}
+        self.panels = {}
+        self.service_hangers_map = {}
+        self.copied_rules = None  
         self.doc = doc
+        self.services = services
 
         self.Width = 760
         self.Height = 800
@@ -258,6 +282,8 @@ class PipeServiceForm(Window):
             rules = existing_settings.get(service, [])
             service_hangers = get_hangers_for_service(self.doc, service)
             default_hanger = service_hangers[0] if service_hangers else "--- NONE ---"
+            
+            self.service_hangers_map[service] = (service_hangers, default_hanger)
 
             if not rules:
                 rules = [{
@@ -284,6 +310,14 @@ class PipeServiceForm(Window):
         ok_btn.Margin = Thickness(6, 0, 6, 0)
         ok_btn.Click += self.ok_clicked
         button_panel.Children.Add(ok_btn)
+
+        defaults_btn = Button()
+        defaults_btn.Content = "Defaults"
+        defaults_btn.Width = 90
+        defaults_btn.Height = 28
+        defaults_btn.Margin = Thickness(6, 0, 6, 0)
+        defaults_btn.Click += self.defaults_clicked
+        button_panel.Children.Add(defaults_btn)
 
         cancel_btn = Button()
         cancel_btn.Content = "Cancel"
@@ -312,8 +346,12 @@ class PipeServiceForm(Window):
 
         hc0 = ColumnDefinition(); hc0.Width = GridLength(1, GridUnitType.Star)
         hc1 = ColumnDefinition(); hc1.Width = GridLength.Auto
+        hc2 = ColumnDefinition(); hc2.Width = GridLength.Auto
+        hc3 = ColumnDefinition(); hc3.Width = GridLength.Auto
         header_grid.ColumnDefinitions.Add(hc0)
         header_grid.ColumnDefinitions.Add(hc1)
+        header_grid.ColumnDefinitions.Add(hc2)
+        header_grid.ColumnDefinitions.Add(hc3)
 
         title = TextBlock()
         title.Text = service
@@ -323,11 +361,27 @@ class PipeServiceForm(Window):
         Grid.SetColumn(title, 0)
         header_grid.Children.Add(title)
 
+        copy_btn = Button()
+        copy_btn.Content = "Copy"
+        copy_btn.Width = 55
+        copy_btn.Height = 22
+        copy_btn.Margin = Thickness(0, 0, 4, 0)
+        Grid.SetColumn(copy_btn, 1)
+        header_grid.Children.Add(copy_btn)
+
+        paste_btn = Button()
+        paste_btn.Content = "Paste"
+        paste_btn.Width = 55
+        paste_btn.Height = 22
+        paste_btn.Margin = Thickness(0, 0, 4, 0)
+        Grid.SetColumn(paste_btn, 2)
+        header_grid.Children.Add(paste_btn)
+
         add_btn = Button()
         add_btn.Content = "+ Add Break"
         add_btn.Width = 80
         add_btn.Height = 22
-        Grid.SetColumn(add_btn, 1)
+        Grid.SetColumn(add_btn, 3)
         header_grid.Children.Add(add_btn)
 
         block_panel.Children.Add(header_grid)
@@ -368,6 +422,7 @@ class PipeServiceForm(Window):
 
         rows_panel = StackPanel()
         block_panel.Children.Add(rows_panel)
+        self.panels[service] = rows_panel
 
         def make_add_handler(svc, pnl, s_hangers, d_hanger):
             def handler(sender, args):
@@ -375,10 +430,60 @@ class PipeServiceForm(Window):
             return handler
         add_btn.Click += make_add_handler(service, rows_panel, service_hangers, default_hanger)
 
+        def make_copy_handler(svc, t_block):
+            def handler(sender, args):
+                self.copy_service_settings(svc, t_block)
+            return handler
+        copy_btn.Click += make_copy_handler(service, title)
+
+        def make_paste_handler(svc, pnl, s_hangers, d_hanger):
+            def handler(sender, args):
+                self.paste_service_settings(svc, pnl, s_hangers, d_hanger)
+            return handler
+        paste_btn.Click += make_paste_handler(service, rows_panel, service_hangers, default_hanger)
+
         for rule in rules:
             self.add_rule_row(service, rows_panel, rule, service_hangers, default_hanger)
 
         self.main_panel.Children.Add(border)
+
+    def copy_service_settings(self, service_name, title_block):
+        current_rules = []
+        for controls in self.inputs.get(service_name, []):
+            try:
+                size_text = controls["size"].Text.strip().upper()
+                size_val = 999.0 if size_text in ["ANY", "MAX", "ALL"] else float(size_text)
+                spacing_val = float(controls["spacing"].Text)
+                dist_end_val = float(controls["dist_from_end"].Text)
+                selected_hanger = controls["hanger"].SelectedItem
+                hanger_val = str(selected_hanger).strip() if selected_hanger else "--- NONE ---"
+
+                current_rules.append({
+                    "size": size_val,
+                    "hanger": hanger_val,
+                    "spacing": spacing_val,
+                    "dist_from_end": dist_end_val,
+                    "joints": bool(controls["joints"].IsChecked)
+                })
+            except:
+                pass
+        
+        if current_rules:
+            self.copied_rules = current_rules
+            # Non-intrusive UI feedback: update title banner temporarily
+            title_block.Text = "{} [COPIED ✓]".format(service_name)
+            self.Title = "Piping Hanger Configuration — [Copied: {}]".format(service_name)
+
+    def paste_service_settings(self, service_name, parent_panel, service_hangers, default_hanger):
+        if not self.copied_rules:
+            TaskDialog.Show("Hanger Config", "No settings have been copied yet. Click 'Copy' on a service first.")
+            return
+
+        parent_panel.Children.Clear()
+        self.inputs[service_name] = []
+
+        for rule in self.copied_rules:
+            self.add_rule_row(service_name, parent_panel, rule, service_hangers, default_hanger)
 
     def add_rule_row(self, service, parent_panel, rule_data, service_hangers, default_hanger):
         if not rule_data:
@@ -477,6 +582,26 @@ class PipeServiceForm(Window):
         del_btn.Click += make_del_handler(service, parent_panel, rule_controls)
         parent_panel.Children.Add(row_grid)
 
+    def defaults_clicked(self, sender, args):
+        for service in self.services:
+            pnl = self.panels.get(service)
+            if not pnl:
+                continue
+            
+            pnl.Children.Clear()
+            self.inputs[service] = []
+
+            service_hangers, default_hanger = self.service_hangers_map.get(service, ([], "--- NONE ---"))
+            
+            default_rule = {
+                "size": 999.0,
+                "hanger": default_hanger,
+                "spacing": 8.0,
+                "dist_from_end": 1.0,
+                "joints": False
+            }
+            self.add_rule_row(service, pnl, default_rule, service_hangers, default_hanger)
+
     def ok_clicked(self, sender, args):
         values = {}
         for service, rules_list in self.inputs.items():
@@ -520,7 +645,7 @@ class PipeServiceForm(Window):
 
 try:
     services_in_model = collect_services_from_model(doc)
-    saved_settings = load_service_settings(FILEPATH)
+    saved_settings = load_service_settings(doc)
 
     if not services_in_model:
         TaskDialog.Show("Pipe Hangers", "No fabrication piping services found in the current model.")
@@ -528,7 +653,7 @@ try:
         form = PipeServiceForm(services_in_model, saved_settings, doc)
         if form.ShowDialog():
             if form.result:
-                save_service_settings(FILEPATH, form.result)
+                save_service_settings(doc, form.result)
 
 except Exception as e:
     TaskDialog.Show("Error Generating Config", traceback.format_exc())
